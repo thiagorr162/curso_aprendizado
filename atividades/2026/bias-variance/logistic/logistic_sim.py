@@ -5,14 +5,16 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button
 
 # --- configuracao ------------------------------------------------------
-N_BALANCED   = 400   # pontos por classe no cenario balanceado
-N_MAJ        = 900   # classe majoritaria no cenario desbalanceado
-N_MIN        = 100   # classe minoritaria no cenario desbalanceado
-MU0          = np.array([-1.2,  0.0])
-MU1          = np.array([ 1.2,  0.5])
-COV          = np.array([[1.2, 0.3], [0.3, 0.8]])
+N_BALANCED   = 400
+N_MAJ        = 900
+N_MIN        = 100
+MU0          = np.array([ 0.0,  0.0])
+MU1          = np.array([ 1.5,  0.5])
+COV0         = np.array([[2.2, 0.4], [0.4, 1.5]])    # classe 0: grande
+COV1         = np.array([[0.35, 0.25], [0.25, 0.40]]) # classe 1: pequena, rotacionada
 SEED         = 42
 INIT_THRESH  = 0.5
+GRID_RES     = 200   # resolucao do grid para contorno
 
 
 # --- dados e modelo ----------------------------------------------------
@@ -20,8 +22,8 @@ INIT_THRESH  = 0.5
 def generate(imbalanced: bool) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(SEED)
     n0, n1 = (N_MAJ, N_MIN) if imbalanced else (N_BALANCED, N_BALANCED)
-    X0 = rng.multivariate_normal(MU0, COV, n0)
-    X1 = rng.multivariate_normal(MU1, COV, n1)
+    X0 = rng.multivariate_normal(MU0, COV0, n0)
+    X1 = rng.multivariate_normal(MU1, COV1, n1)
     X  = np.vstack([X0, X1])
     y  = np.hstack([np.zeros(n0), np.ones(n1)])
     return X, y
@@ -31,18 +33,23 @@ def sigmoid(z: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-np.asarray(z, dtype=float)))
 
 
-def fit_logistic(X: np.ndarray, y: np.ndarray, lr: float = 0.5, n_iter: int = 500) -> np.ndarray:
-    Xa = np.column_stack([X, np.ones(len(X))])
-    w  = np.zeros(3)
+def make_features(X: np.ndarray) -> np.ndarray:
+    """Features quadraticas: [x1, x2, x1^2, x2^2, x1*x2, 1]"""
+    x1, x2 = X[:, 0], X[:, 1]
+    return np.column_stack([x1, x2, x1 ** 2, x2 ** 2, x1 * x2, np.ones(len(X))])
+
+
+def fit_logistic(X: np.ndarray, y: np.ndarray,
+                 lr: float = 0.3, n_iter: int = 1500) -> np.ndarray:
+    Xa = make_features(X)
+    w  = np.zeros(6)
     for _ in range(n_iter):
         w -= lr * Xa.T @ (sigmoid(Xa @ w) - y) / len(y)
     return w
 
 
-def decision_boundary_x2(w: np.ndarray, x1: np.ndarray, thresh: float) -> np.ndarray:
-    """x2 da fronteira P(y=1|x)=thresh dado x1."""
-    logit = np.log(thresh / (1.0 - thresh))
-    return (logit - w[0] * x1 - w[2]) / w[1]
+def get_scores(X: np.ndarray, w: np.ndarray) -> np.ndarray:
+    return sigmoid(make_features(X) @ w)
 
 
 def roc_curve(y: np.ndarray, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -74,14 +81,7 @@ def metrics_at(y: np.ndarray, scores: np.ndarray, thresh: float) -> dict[str, fl
 class LogisticSim:
     def __init__(self) -> None:
         self.imbalanced = False
-        X, y = generate(self.imbalanced)
-        self.X, self.y = X, y
-        w = fit_logistic(X, y)
-        self.w = w
-        Xa = np.column_stack([X, np.ones(len(X))])
-        self.scores = sigmoid(Xa @ w)
-        self.fprs, self.tprs = roc_curve(y, self.scores)
-        self.auc = float(np.trapezoid(self.tprs[::-1], self.fprs[::-1]))
+        self._load_dataset()
 
         self.fig = plt.figure(figsize=(15, 6))
         self.fig.canvas.manager.set_window_title("Regressao Logistica — threshold e metricas")
@@ -102,11 +102,33 @@ class LogisticSim:
 
         self.title = self.fig.suptitle("", fontsize=14, fontweight="bold")
         self._update_title()
-        self._draw_roc()          # painel fixo por dataset
-        self._redraw(INIT_THRESH) # paineis que mudam com threshold
+        self._draw_roc()
+        self._redraw(INIT_THRESH)
 
         self.sl_thresh.on_changed(self._on_thresh)
         self.btn_balance.on_clicked(self._on_toggle)
+
+    # ------------------------------------------------------------------
+    def _load_dataset(self) -> None:
+        X, y = generate(self.imbalanced)
+        self.X, self.y = X, y
+        self.w = fit_logistic(X, y)
+        self.scores = get_scores(X, self.w)
+        self.fprs, self.tprs = roc_curve(y, self.scores)
+        self.auc = float(np.trapezoid(self.tprs[::-1], self.fprs[::-1]))
+
+        # grid de probabilidades — precomputado uma vez por dataset
+        xmin = X[:, 0].min() - 0.6
+        xmax = X[:, 0].max() + 0.6
+        ymin = X[:, 1].min() - 0.6
+        ymax = X[:, 1].max() + 0.6
+        self._xlim = (xmin, xmax)
+        self._ylim = (ymin, ymax)
+        gx = np.linspace(xmin, xmax, GRID_RES)
+        gy = np.linspace(ymin, ymax, GRID_RES)
+        self.xx, self.yy = np.meshgrid(gx, gy)
+        grid_pts = np.column_stack([self.xx.ravel(), self.yy.ravel()])
+        self.prob_map = get_scores(grid_pts, self.w).reshape(self.xx.shape)
 
     def _update_title(self) -> None:
         label = "Desbalanceado (9:1)" if self.imbalanced else "Balanceado (1:1)"
@@ -115,22 +137,13 @@ class LogisticSim:
             "→ Balanceado" if self.imbalanced else "→ Desbalanceado"
         )
 
-    def _switch_dataset(self) -> None:
-        X, y = generate(self.imbalanced)
-        self.X, self.y = X, y
-        self.w = fit_logistic(X, y)
-        Xa = np.column_stack([X, np.ones(len(X))])
-        self.scores = sigmoid(Xa @ self.w)
-        self.fprs, self.tprs = roc_curve(y, self.scores)
-        self.auc = float(np.trapezoid(self.tprs[::-1], self.fprs[::-1]))
-
     # ------------------------------------------------------------------
     def _on_thresh(self, val: float) -> None:
         self._redraw(float(val))
 
     def _on_toggle(self, _: object) -> None:
         self.imbalanced = not self.imbalanced
-        self._switch_dataset()
+        self._load_dataset()
         self._update_title()
         self._draw_roc()
         self._redraw(float(self.sl_thresh.val))
@@ -146,26 +159,38 @@ class LogisticSim:
         ax = self.ax_scatter
         ax.clear()
         X, y = self.X, self.y
-        ax.scatter(X[y == 0, 0], X[y == 0, 1], c="#2980b9", s=12,
-                   alpha=0.5, label="classe 0")
-        ax.scatter(X[y == 1, 0], X[y == 1, 1], c="#c0392b", s=12,
-                   alpha=0.5, label="classe 1")
 
-        x1 = np.linspace(X[:, 0].min() - 0.5, X[:, 0].max() + 0.5, 300)
-        if abs(self.w[1]) > 1e-6:
-            x2_05  = decision_boundary_x2(self.w, x1, 0.5)
-            x2_thr = decision_boundary_x2(self.w, x1, thresh)
-            ax.plot(x1, x2_05,  "--", color="#888", linewidth=1.5,
-                    label="fronteira (t=0.5)")
-            ax.plot(x1, x2_thr, "-",  color="#e67e22", linewidth=2.5,
+        # fundo: mapa de probabilidade suave
+        ax.imshow(
+            self.prob_map,
+            extent=[*self._xlim, *self._ylim],
+            origin="lower", aspect="auto",
+            cmap="RdBu_r", alpha=0.18, vmin=0, vmax=1,
+        )
+
+        ax.scatter(X[y == 0, 0], X[y == 0, 1], c="#2471a3", s=10,
+                   alpha=0.55, label="classe 0")
+        ax.scatter(X[y == 1, 0], X[y == 1, 1], c="#c0392b", s=10,
+                   alpha=0.55, label="classe 1")
+
+        # fronteira t=0.5 (linha pontilhada fixa)
+        ax.contour(self.xx, self.yy, self.prob_map,
+                   levels=[0.5], colors=["#555"], linestyles=["--"], linewidths=[1.5])
+        # fronteira no threshold escolhido
+        if 0.0 < thresh < 1.0:
+            ax.contour(self.xx, self.yy, self.prob_map,
+                       levels=[thresh], colors=["#e67e22"], linewidths=[2.8],
+                       zorder=3)
+            # proxy para legenda
+            ax.plot([], [], color="#e67e22", linewidth=2.8,
                     label=f"fronteira (t={thresh:.2f})")
 
-        ax.set_xlim(X[:, 0].min() - 0.5, X[:, 0].max() + 0.5)
-        ax.set_ylim(X[:, 1].min() - 0.5, X[:, 1].max() + 0.5)
+        ax.set_xlim(*self._xlim)
+        ax.set_ylim(*self._ylim)
         ax.set_xlabel("x₁"); ax.set_ylabel("x₂")
         ax.set_title("Dados e fronteira de decisao")
         ax.legend(fontsize=8, loc="upper left")
-        ax.grid(alpha=0.18)
+        ax.grid(alpha=0.15)
 
     def _draw_metrics(self, thresh: float) -> None:
         ax = self.ax_metrics
@@ -192,7 +217,7 @@ class LogisticSim:
         ax.clear()
         ax.plot(self.fprs, self.tprs, color="#7f4acb", linewidth=2.5,
                 label=f"ROC  (AUC={self.auc:.3f})")
-        ax.plot([0, 1], [0, 1], "--", color="#aaa", linewidth=1.2, label="aleatório")
+        ax.plot([0, 1], [0, 1], "--", color="#aaa", linewidth=1.2, label="aleatorio")
         self.roc_dot, = ax.plot([], [], "o", color="#e67e22", markersize=10, zorder=5)
         ax.set_xlabel("FPR  (1 - especificidade)")
         ax.set_ylabel("TPR  (recall / sensibilidade)")
@@ -202,7 +227,6 @@ class LogisticSim:
         ax.set_xlim(0, 1); ax.set_ylim(0, 1)
 
     def _update_roc_marker(self, thresh: float) -> None:
-        # ponto na ROC correspondente ao threshold atual
         idx = int(np.round(thresh * (len(self.fprs) - 1) / 0.99))
         idx = np.clip(idx, 0, len(self.fprs) - 1)
         self.roc_dot.set_data([self.fprs[idx]], [self.tprs[idx]])
