@@ -1,0 +1,384 @@
+
+<h2 class="sr-only">Otimização com restrição: vistas 2D e 3D sincronizadas do Lagrangiano com superfície f(x,y)</h2>
+<style>
+.sb{cursor:pointer;padding:4px 11px;border-radius:6px;border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);font-size:12px;font-family:var(--font-sans)}
+.sb.on{background:var(--color-background-secondary);color:var(--color-text-primary);border-color:var(--color-border-primary);font-weight:500}
+.mbox{background:var(--color-background-secondary);border-radius:7px;padding:8px 13px;margin:5px 0;border-left:2.5px solid #7F77DD;font-family:var(--font-mono);font-size:11.5px;line-height:1.85}
+.rf{color:#E24B4A}.rg{color:#1D9E75}.rl{color:#7F77DD}
+.ro{background:var(--color-background-secondary);border-radius:7px;padding:8px 12px;font-size:11px;line-height:2;font-family:var(--font-mono)}
+.act{font-size:11px;padding:5px 10px;border-radius:6px;border:0.5px solid var(--color-border-secondary);background:transparent;cursor:pointer;font-family:var(--font-sans);display:block;width:100%;text-align:left;margin-bottom:5px;color:inherit}
+</style>
+
+<div style="display:flex;gap:6px;margin-bottom:9px;flex-wrap:wrap">
+  <button class="sb on" id="b0" onclick="goStep(0)">① Problema</button>
+  <button class="sb" id="b1" onclick="goStep(1)">② Lagrangiano</button>
+  <button class="sb" id="b2" onclick="goStep(2)">③ Condições FOC</button>
+  <button class="sb" id="b3" onclick="goStep(3)">④ Geometria</button>
+</div>
+
+<div style="min-height:130px;margin-bottom:11px">
+  <div id="p0">
+    <p style="margin:0 0 4px;font-size:12.5px;color:var(--color-text-secondary)">Ponto na circunferência mais próximo de (2,1):</p>
+    <div class="mbox">min <span class="rf">f(x,y) = (x−2)²+(y−1)²</span>&nbsp;&nbsp;s.a.&nbsp;<span class="rg">g(x,y) = x²+y²−1 = 0</span></div>
+    <p style="margin:4px 0 0;font-size:11.5px;color:var(--color-text-secondary)">Em 3D: a superfície colorida é <span class="rf">f</span>, a curva azul sobre ela é <span class="rg">g=0</span> projetada. Queremos o ponto <em>mais baixo</em> da curva azul.</p>
+  </div>
+  <div id="p1" style="display:none">
+    <div class="mbox"><span class="rl">L</span>(x,y,<span class="rl">λ</span>) = <span class="rf">(x−2)²+(y−1)²</span> + <span class="rl">λ</span>·<span class="rg">(x²+y²−1)</span></div>
+    <p style="margin:4px 0 0;font-size:11.5px;color:var(--color-text-secondary)">Em 3D: a curva azul sobre a superfície de <span class="rf">f</span> tem seu ponto mais baixo exatamente no mínimo ★. <span class="rl">λ</span> = "custo sombra" da restrição — quanto o ótimo melhoraria se o círculo crescesse em ε.</p>
+  </div>
+  <div id="p2" style="display:none">
+    <div class="mbox">∇<span class="rl">L</span> = 0 &nbsp;⟹&nbsp; <span class="rf">∇f</span> + <span class="rl">λ</span><span class="rg">∇g</span> = 0 &nbsp;⟹&nbsp; <span class="rf">∇f</span> = −<span class="rl">λ</span><span class="rg">∇g</span><br>Solução: <span class="rl">λ</span> = √5−1 ≈ 1.236, &nbsp;P★ ≈ (0.894, 0.447)</div>
+    <p style="margin:4px 0 0;font-size:11.5px;color:var(--color-text-secondary)">Em 3D: nos pontos críticos, a tangente à curva azul é <em>horizontal</em> — mínimo e máximo locais na curva.</p>
+  </div>
+  <div id="p3" style="display:none">
+    <div class="mbox"><span class="rg">∇g</span> ⊥ curva <span class="rg">g=0</span> &nbsp;•&nbsp; Se <span class="rf">∇f</span> tivesse componente ao longo de <span class="rg">g=0</span><br>→ poderia reduzir <span class="rf">f</span> movendo-se &nbsp;∴ no ótimo: <span class="rf">∇f</span> ∥ <span class="rg">∇g</span></div>
+    <p style="margin:4px 0 0;font-size:11.5px;color:var(--color-text-secondary)">Há <strong style="font-weight:500">dois</strong> pontos críticos (mínimo ★ e máximo ✦). Lagrange encontra ambos — o sinal de <span class="rl">λ</span> os distingue.</p>
+  </div>
+</div>
+
+<div style="display:flex;gap:8px;margin-bottom:9px;align-items:flex-start">
+  <div style="flex:0 0 auto">
+    <div style="font-size:9.5px;color:var(--color-text-tertiary);margin-bottom:3px;text-align:center">2D — arraste para mover ponto</div>
+    <canvas id="cv2d" width="250" height="250" style="width:250px;height:250px;border-radius:8px;border:0.5px solid var(--color-border-tertiary);cursor:ew-resize;display:block"></canvas>
+  </div>
+  <div style="flex:1;min-width:0">
+    <div style="font-size:9.5px;color:var(--color-text-tertiary);margin-bottom:3px;text-align:center">3D — superfície <span class="rf">f</span> e curva <span class="rg">g=0</span> — arraste para orbitar · duplo-clique para girar</div>
+    <div id="w3d" style="border-radius:8px;border:0.5px solid var(--color-border-tertiary);overflow:hidden;line-height:0">
+      <canvas id="cv3d" style="display:block"></canvas>
+    </div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+  <div style="display:flex;flex-direction:column;gap:7px">
+    <div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--color-text-secondary);margin-bottom:3px"><span>θ na restrição</span><span id="aout" style="font-family:var(--font-mono)">26.6°</span></div>
+      <input type="range" id="asl" min="0" max="359.9" step="0.5" value="26.6" style="width:100%" oninput="updateAll(+this.value)">
+    </div>
+    <div class="ro">
+      P &nbsp;= (<span id="rx">?</span>, <span id="ry">?</span>)<br>
+      <span class="rf">∇f</span> = (<span id="rfx">?</span>, <span id="rfy">?</span>)<br>
+      <span class="rg">∇g</span> = (<span id="rgx">?</span>, <span id="rgy">?</span>)<br>
+      <span class="rl">λ</span>&nbsp;≈ <span id="rlam">?</span>&nbsp;&nbsp;&nbsp;<span class="rf">f</span>(P) = <span id="rfv">?</span>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:7px">
+    <div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+        <span style="color:var(--color-text-secondary)"><span class="rf">∇f</span> ∥ <span class="rg">∇g</span></span>
+        <span id="rpct" style="font-family:var(--font-mono)">0%</span>
+      </div>
+      <div style="height:5px;background:var(--color-background-secondary);border-radius:3px;overflow:hidden">
+        <div id="rbar" style="height:100%;width:0;border-radius:3px;transition:width .08s,background .1s"></div>
+      </div>
+      <div id="kkt" style="font-size:10px;margin-top:3px;min-height:13px;font-family:var(--font-mono);color:var(--color-text-tertiary)"></div>
+    </div>
+    <button class="act" style="color:var(--color-text-primary);font-weight:500" onclick="animTo(26.565,750)">★ Animar para o mínimo</button>
+    <button class="act" onclick="animTo(206.565,750)">✦ Animar para o máximo</button>
+    <button class="act" onclick="sendPrompt('No exemplo do círculo unitário, derive explicitamente as condições KKT de segunda ordem para confirmar que o ponto (2/√5, 1/√5) é mínimo e não máximo')">Condições de 2ª ordem ↗</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+const OPT=Math.atan2(1,2)*180/Math.PI;
+let theta=OPT;
+const dk=matchMedia('(prefers-color-scheme: dark)').matches;
+
+// ─── 2D ───────────────────────────────────────────────────────
+const cv=document.getElementById('cv2d');
+const ctx=cv.getContext('2d');
+const W=250,H=250,M=19;
+const xMn=-2.5,xMx=3.5,s2=(W-2*M)/(xMx-xMn);
+const wx2=x=>M+(x-xMn)*s2, wy2=y=>H-M-(y-xMn)*s2;
+const C2={grid:dk?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)',
+  axis:dk?'rgba(255,255,255,0.15)':'rgba(0,0,0,0.15)',
+  txt:dk?'rgba(255,255,255,0.28)':'rgba(0,0,0,0.24)',
+  con:'#378ADD',gf:'#E24B4A',gg:'#1D9E75',
+  pt:dk?'#e8e6df':'#2C2C2A',opt:'#BA7517',mx:'#993556',tgt:'#7F77DD'};
+
+function arrow2(x1,y1,x2,y2,col,lw){
+  const dx=x2-x1,dy=y2-y1,l=Math.hypot(dx,dy);if(l<4)return;
+  const ux=dx/l,uy=dy/l,a=Math.PI/6.5,hl=8;
+  ctx.strokeStyle=ctx.fillStyle=col;ctx.lineWidth=lw||2;
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x2,y2);
+  ctx.lineTo(x2-hl*(ux*Math.cos(a)-uy*Math.sin(a)),y2-hl*(ux*Math.sin(a)+uy*Math.cos(a)));
+  ctx.lineTo(x2-hl*(ux*Math.cos(a)+uy*Math.sin(a)),y2-hl*(uy*Math.cos(a)-ux*Math.sin(a)));
+  ctx.closePath();ctx.fill();
+}
+
+function draw2D(deg){
+  const t=deg*Math.PI/180,px=Math.cos(t),py=Math.sin(t);
+  const gfx=2*(px-2),gfy=2*(py-1),ggx=2*px,ggy=2*py;
+  const gfl=Math.hypot(gfx,gfy),ggl=Math.hypot(ggx,ggy);
+  const sc=46/Math.max(gfl,ggl,1);
+  const cross=gfx*ggy-gfy*ggx;
+  const align=Math.max(0,1-Math.abs(cross)/(gfl*ggl));
+  const lam=-(gfx*ggx+gfy*ggy)/(ggx*ggx+ggy*ggy);
+  const fv=(px-2)**2+(py-1)**2;
+
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle=C2.grid;ctx.lineWidth=0.5;
+  for(let i=-2;i<=3;i++){
+    ctx.beginPath();ctx.moveTo(wx2(i),0);ctx.lineTo(wx2(i),H);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,wy2(i));ctx.lineTo(W,wy2(i));ctx.stroke();
+  }
+  ctx.strokeStyle=C2.axis;ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(wx2(-2.5),wy2(0));ctx.lineTo(wx2(3.5),wy2(0));ctx.stroke();
+  ctx.beginPath();ctx.moveTo(wx2(0),wy2(-2.5));ctx.lineTo(wx2(0),wy2(3.5));ctx.stroke();
+  ctx.fillStyle=C2.txt;ctx.font='8px sans-serif';
+  ctx.textAlign='center';[-2,-1,1,2,3].forEach(i=>ctx.fillText(i,wx2(i),wy2(0)+9));
+  ctx.textAlign='right';[-2,-1,1,2].forEach(i=>ctx.fillText(i,wx2(0)-3,wy2(i)+3));
+
+  const lvls=[0.2,0.6,1.3,2.4,4,6.5,10];
+  ctx.setLineDash([3,3]);
+  lvls.forEach((r2,i)=>{
+    const al=[.26,.21,.17,.13,.10,.07,.04][i];
+    ctx.strokeStyle=dk?`rgba(230,175,75,${al})`:`rgba(186,117,23,${al})`;
+    ctx.lineWidth=0.7;ctx.beginPath();ctx.arc(wx2(2),wy2(1),Math.sqrt(r2)*s2,0,2*Math.PI);ctx.stroke();
+  });
+  ctx.setLineDash([]);
+  ctx.strokeStyle=C2.con;ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(wx2(0),wy2(0),s2,0,2*Math.PI);ctx.stroke();
+  ctx.fillStyle=C2.con;ctx.font='9px sans-serif';ctx.textAlign='start';
+  ctx.fillText('g=0',wx2(-0.5),wy2(1.1));
+  ctx.strokeStyle=C2.opt;ctx.lineWidth=0.7;ctx.setLineDash([3,3]);
+  ctx.beginPath();ctx.moveTo(wx2(0),wy2(0));ctx.lineTo(wx2(2),wy2(1));ctx.stroke();
+  ctx.setLineDash([]);
+  const ox=2/Math.sqrt(5),oy=1/Math.sqrt(5);
+  ctx.fillStyle=C2.opt;ctx.beginPath();ctx.arc(wx2(ox),wy2(oy),3.5,0,2*Math.PI);ctx.fill();
+  ctx.font='8.5px sans-serif';ctx.textAlign='start';ctx.fillText('★',wx2(ox)+4,wy2(oy)-4);
+  ctx.fillStyle=C2.mx;ctx.beginPath();ctx.arc(wx2(-ox),wy2(-oy),3.5,0,2*Math.PI);ctx.fill();
+  ctx.textAlign='end';ctx.fillText('✦',wx2(-ox)-4,wy2(-oy)+8);
+  ctx.fillStyle=C2.tgt;ctx.beginPath();ctx.arc(wx2(2),wy2(1),4.5,0,2*Math.PI);ctx.fill();
+  ctx.font='9px sans-serif';ctx.textAlign='start';ctx.fillText('(2,1)',wx2(2)+6,wy2(1)+3);
+
+  const cpx=wx2(px),cpy=wy2(py);
+  const efx=gfx*sc,efy=gfy*sc,egx=ggx*sc,egy=ggy*sc;
+  if(align<0.92){
+    const tx=-py,ty=px,df=gfx*tx+gfy*ty;
+    ctx.strokeStyle=df<0?C2.gf:C2.gg;ctx.lineWidth=1.5;ctx.globalAlpha=0.3;
+    ctx.beginPath();ctx.arc(wx2(0),wy2(0),s2,-t,-t-(df<0?-0.4:0.4),df<0);ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+  arrow2(cpx,cpy,cpx+efx,cpy-efy,C2.gf,2.1);
+  arrow2(cpx,cpy,cpx+egx,cpy-egy,C2.gg,2.1);
+  const aF=Math.atan2(-gfy,gfx),aG=Math.atan2(-ggy,ggx);
+  let df=aF-aG;while(df>Math.PI)df-=2*Math.PI;while(df<-Math.PI)df+=2*Math.PI;
+  if(Math.abs(df)>0.06){
+    ctx.strokeStyle=align>0.9?C2.gg:C2.txt;ctx.lineWidth=1;
+    ctx.beginPath();df>0?ctx.arc(cpx,cpy,13,aG,aF):ctx.arc(cpx,cpy,13,aF,aG);ctx.stroke();
+  }
+  ctx.font='bold 10px sans-serif';
+  const lo=11,lnf=Math.hypot(efx,efy)||1,lng=Math.hypot(egx,egy)||1;
+  ctx.fillStyle=C2.gf;ctx.textAlign='center';
+  ctx.fillText('∇f',cpx+efx*0.6-efy/lnf*lo,cpy-efy*0.6-efx/lnf*lo);
+  ctx.fillStyle=C2.gg;
+  ctx.fillText('∇g',cpx+egx*0.6+egy/lng*lo,cpy-egy*0.6-egx/lng*lo);
+  ctx.fillStyle=C2.pt;ctx.strokeStyle=C2.con;ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(cpx,cpy,5.5,0,2*Math.PI);ctx.fill();ctx.stroke();
+
+  document.getElementById('rx').textContent=px.toFixed(3);
+  document.getElementById('ry').textContent=py.toFixed(3);
+  document.getElementById('rfx').textContent=gfx.toFixed(3);
+  document.getElementById('rfy').textContent=gfy.toFixed(3);
+  document.getElementById('rgx').textContent=ggx.toFixed(3);
+  document.getElementById('rgy').textContent=ggy.toFixed(3);
+  document.getElementById('rlam').textContent=lam.toFixed(3);
+  document.getElementById('rfv').textContent=fv.toFixed(3);
+  const pct=Math.round(align*100);
+  document.getElementById('rpct').textContent=pct+'%';
+  const bar=document.getElementById('rbar');
+  bar.style.width=pct+'%';bar.style.background=align>0.95?'#1D9E75':align>0.65?'#EF9F27':'#E24B4A';
+  const ao=document.getElementById('aout');
+  ao.textContent=deg.toFixed(1)+'°';ao.style.color='';
+  const kktEl=document.getElementById('kkt');
+  if(align>0.97){
+    const isMin=lam>0;
+    kktEl.textContent=(isMin?'★':'✦')+' KKT ok — '+(isMin?'mínimo (λ>0)':'máximo (λ<0)');
+    kktEl.style.color=isMin?'#1D9E75':'#993556';
+    ao.textContent=deg.toFixed(1)+'° '+(isMin?'★':'✦');ao.style.color=isMin?'#1D9E75':'#993556';
+  } else {
+    kktEl.textContent='← componente de ∇f ao longo de g=0 → não ótimo';
+    kktEl.style.color='var(--color-text-tertiary)';
+  }
+}
+
+// ─── 3D ───────────────────────────────────────────────────────
+const w3d=document.getElementById('w3d');
+const cv3=document.getElementById('cv3d');
+const W3=Math.max(220,w3d.clientWidth||380),H3=250;
+cv3.width=W3;cv3.height=H3;cv3.style.width=W3+'px';cv3.style.height=H3+'px';
+
+const renderer=new THREE.WebGLRenderer({canvas:cv3,antialias:true,alpha:true});
+renderer.setSize(W3,H3);
+renderer.setClearColor(dk?0x111110:0xf5f4ef,0.6);
+renderer.shadowMap.enabled=false;
+
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(44,W3/H3,0.05,120);
+scene.add(new THREE.AmbientLight(0xffffff,0.5));
+const dl=new THREE.DirectionalLight(0xffffff,0.75);dl.position.set(3,9,5);scene.add(dl);
+const dl2=new THREE.DirectionalLight(0xffffff,0.2);dl2.position.set(-4,2,-3);scene.add(dl2);
+
+// Surface f(x,y)
+const zSc=0.13,N=44,xL=-2.3,xR=3.6,yL=-2.3,yR=3.6;
+const vp=[],vc=[],vi=[];
+function fv(x,y){return(x-2)**2+(y-1)**2;}
+function fcol(v){
+  const t=Math.min(v/12,1);
+  let r,g,b;
+  if(t<0.3){const s=t/0.3;r=0.08+s*0.42;g=0.35+s*0.35;b=0.85-s*0.15;}
+  else if(t<0.6){const s=(t-0.3)/0.3;r=0.5+s*0.38;g=0.7-s*0.35;b=0.7-s*0.6;}
+  else{const s=(t-0.6)/0.4;r=0.88+s*0.05;g=0.35-s*0.25;b=0.1-s*0.05;}
+  return[Math.min(1,r),Math.max(0,g),Math.max(0,b)];
+}
+for(let i=0;i<=N;i++)for(let j=0;j<=N;j++){
+  const x=xL+(xR-xL)*i/N,y=yL+(yR-yL)*j/N,f=fv(x,y);
+  vp.push(x,f*zSc,y);const[r,g,b]=fcol(f);vc.push(r,g,b);
+}
+for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  const a=i*(N+1)+j,b=a+1,c=a+N+1,d=c+1;vi.push(a,c,b,b,c,d);
+}
+const sg=new THREE.BufferGeometry();
+sg.setAttribute('position',new THREE.Float32BufferAttribute(vp,3));
+sg.setAttribute('color',new THREE.Float32BufferAttribute(vc,3));
+sg.setIndex(vi);sg.computeVertexNormals();
+scene.add(new THREE.Mesh(sg,new THREE.MeshPhongMaterial({vertexColors:true,side:THREE.DoubleSide,shininess:25,specular:0x222222})));
+
+// Constraint curve on surface
+const cPts=[];
+for(let i=0;i<=360;i++){
+  const a=2*Math.PI*i/360,cx=Math.cos(a),cy=Math.sin(a);
+  cPts.push(new THREE.Vector3(cx,fv(cx,cy)*zSc+0.015,cy));
+}
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(cPts),new THREE.LineBasicMaterial({color:0x378ADD,linewidth:2})));
+
+// Floor circle (projection)
+const fpPts=[];
+for(let i=0;i<=200;i++){const a=2*Math.PI*i/200;fpPts.push(new THREE.Vector3(Math.cos(a),0.005,Math.sin(a)));}
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(fpPts),new THREE.LineBasicMaterial({color:0x378ADD,opacity:0.35,transparent:true})));
+
+// Floor plane
+const fp=new THREE.Mesh(new THREE.PlaneGeometry(7,7),new THREE.MeshBasicMaterial({color:dk?0x1c1c18:0xeceae2,side:THREE.DoubleSide,opacity:0.45,transparent:true}));
+fp.rotation.x=-Math.PI/2;fp.position.set(0.65,-0.005,0.65);scene.add(fp);
+
+// Target point (2,1)
+const tS=new THREE.Mesh(new THREE.SphereGeometry(0.08,14,14),new THREE.MeshPhongMaterial({color:0x7F77DD}));
+tS.position.set(2,0.01,1);scene.add(tS);
+
+// Min/max markers
+const ox=2/Math.sqrt(5),oy=1/Math.sqrt(5);
+const minS=new THREE.Mesh(new THREE.SphereGeometry(0.09,14,14),new THREE.MeshPhongMaterial({color:0xBA7517}));
+minS.position.set(ox,fv(ox,oy)*zSc+0.012,oy);scene.add(minS);
+const maxS=new THREE.Mesh(new THREE.SphereGeometry(0.09,14,14),new THREE.MeshPhongMaterial({color:0x993556}));
+maxS.position.set(-ox,fv(-ox,-oy)*zSc+0.012,-oy);scene.add(maxS);
+
+// Moving point
+const pS=new THREE.Mesh(new THREE.SphereGeometry(0.1,16,16),new THREE.MeshPhongMaterial({color:dk?0xffffff:0x1a1a18,shininess:90,specular:0x888888}));
+scene.add(pS);
+
+// Vertical drop line
+const dpGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0),new THREE.Vector3(0,1,0)]);
+const dpLine=new THREE.Line(dpGeo,new THREE.LineBasicMaterial({color:dk?0xffffff:0x1a1a18,opacity:0.3,transparent:true}));
+scene.add(dpLine);
+
+// ∇f and ∇g arrows in 3D (flat on z=0 plane)
+function makeArrow3(col){
+  const g=new THREE.Group();
+  const shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,1,8),new THREE.MeshPhongMaterial({color:col}));
+  shaft.position.y=0.5;g.add(shaft);
+  const head=new THREE.Mesh(new THREE.ConeGeometry(0.06,0.18,8),new THREE.MeshPhongMaterial({color:col}));
+  head.position.y=1.09;g.add(head);
+  return g;
+}
+const arrowF=makeArrow3(0xE24B4A),arrowG=makeArrow3(0x1D9E75);
+scene.add(arrowF);scene.add(arrowG);
+
+function setArrow3(arrow,ox,oy,vx,vy,len){
+  const l=Math.hypot(vx,vy);if(l<0.01){arrow.visible=false;return;}
+  arrow.visible=true;
+  const nx=vx/l,ny=vy/l;
+  arrow.position.set(ox,0.015,oy);
+  const s=len/1.0;
+  arrow.scale.set(s,s,s);
+  const angle=Math.atan2(nx,-ny);
+  arrow.rotation.set(0,0,0);
+  arrow.rotation.y=angle;
+  arrow.rotation.x=Math.PI/2;
+}
+
+function update3D(deg){
+  const t=deg*Math.PI/180,px=Math.cos(t),py=Math.sin(t);
+  const f=fv(px,py),z=f*zSc;
+  pS.position.set(px,z,py);
+  const dp=dpLine.geometry.attributes.position;
+  dp.setXYZ(0,px,0.005,py);dp.setXYZ(1,px,z,py);dp.needsUpdate=true;
+  const gfx=2*(px-2),gfy=2*(py-1),ggx=2*px,ggy=2*py;
+  const gfl=Math.hypot(gfx,gfy),ggl=Math.hypot(ggx,ggy);
+  const sc=0.6/Math.max(gfl,ggl,1);
+  setArrow3(arrowF,px,py,gfx,gfy,gfl*sc);
+  setArrow3(arrowG,px,py,ggx,ggy,ggl*sc);
+}
+
+// Camera orbit
+let az=0.5,el=0.55,autoRot=true;
+const camTgt=new THREE.Vector3(0.6,0.7,0.6),camR=10;
+function updateCam(){
+  camera.position.set(
+    camTgt.x+camR*Math.cos(el)*Math.sin(az),
+    camTgt.y+camR*Math.sin(el),
+    camTgt.z+camR*Math.cos(el)*Math.cos(az)
+  );camera.lookAt(camTgt);
+}
+updateCam();
+
+// 3D animation loop
+function anim3(){
+  requestAnimationFrame(anim3);
+  if(autoRot){az+=0.004;updateCam();}
+  update3D(theta);
+  renderer.render(scene,camera);
+}
+anim3();
+
+// ─── Interactions ──────────────────────────────────────────────
+let d2=false,d2x=0,d2a=0,d3=false,d3x=0,d3y=0,d3az=0,d3el=0;
+
+cv.addEventListener('mousedown',e=>{d2=true;d2x=e.clientX;d2a=theta;cv.style.cursor='grabbing';});
+cv3.addEventListener('mousedown',e=>{d3=true;autoRot=false;d3x=e.clientX;d3y=e.clientY;d3az=az;d3el=el;cv3.style.cursor='grabbing';});
+cv3.addEventListener('dblclick',()=>{autoRot=true;});
+document.addEventListener('mousemove',e=>{
+  if(d2){const na=((d2a+(e.clientX-d2x)*0.65)%360+360)%360;document.getElementById('asl').value=na;updateAll(na);}
+  if(d3){az=d3az+(e.clientX-d3x)*0.011;el=Math.max(0.08,Math.min(1.35,d3el-(e.clientY-d3y)*0.011));updateCam();}
+});
+document.addEventListener('mouseup',()=>{if(d2){d2=false;cv.style.cursor='ew-resize';}if(d3){d3=false;cv3.style.cursor='grab';}});
+cv.addEventListener('touchstart',e=>{d2=true;d2x=e.touches[0].clientX;d2a=theta;},{passive:true});
+cv.addEventListener('touchmove',e=>{if(!d2)return;const na=((d2a+(e.touches[0].clientX-d2x)*0.65)%360+360)%360;document.getElementById('asl').value=na;updateAll(na);e.preventDefault();},{passive:false});
+cv.addEventListener('touchend',()=>{d2=false;});
+cv3.addEventListener('touchstart',e=>{d3=true;autoRot=false;d3x=e.touches[0].clientX;d3y=e.touches[0].clientY;d3az=az;d3el=el;},{passive:true});
+cv3.addEventListener('touchmove',e=>{if(!d3)return;az=d3az+(e.touches[0].clientX-d3x)*0.011;el=Math.max(0.08,Math.min(1.35,d3el-(e.touches[0].clientY-d3y)*0.011));updateCam();e.preventDefault();},{passive:false});
+cv3.addEventListener('touchend',()=>{d3=false;});
+cv3.style.cursor='grab';cv.style.cursor='ew-resize';
+
+window.updateAll=function(deg){theta=((deg%360)+360)%360;draw2D(theta);};
+window.goStep=function(i){[0,1,2,3].forEach(j=>{document.getElementById('p'+j).style.display=j===i?'':'none';document.getElementById('b'+j).classList.toggle('on',j===i);});};
+let rafA=null;
+window.animTo=function(target,dur){
+  if(rafA)cancelAnimationFrame(rafA);
+  const s=theta,t0=performance.now();
+  const diff=((target-s+540)%360)-180,T=dur||700;
+  function tick(t){
+    const p=Math.min((t-t0)/T,1),e=p<.5?2*p*p:-1+(4-2*p)*p;
+    const cur=((s+diff*e)%360+360)%360;
+    document.getElementById('asl').value=cur;updateAll(cur);
+    if(p<1)rafA=requestAnimationFrame(tick);
+  }
+  rafA=requestAnimationFrame(tick);
+};
+
+draw2D(theta);update3D(theta);
+})();
+</script>
