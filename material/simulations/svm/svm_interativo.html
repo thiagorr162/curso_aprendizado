@@ -1,0 +1,1262 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SVM interativo: cenários, kernels, margem e vetores de suporte</title>
+  <style>
+    :root {
+      --bg: #f7f7f8;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #d1d5db;
+      --shadow: rgba(0, 0, 0, 0.08);
+      --blue: #2563eb;
+      --red: #dc2626;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    header {
+      padding: 8px 14px 4px;
+    }
+
+    header h1 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      line-height: 1.2;
+    }
+
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 275px minmax(300px, 1fr);
+      gap: 10px;
+      padding: 8px 12px 12px;
+      height: calc(100vh - 52px);
+      min-height: 0;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 5px 14px var(--shadow);
+    }
+
+    aside.panel {
+      padding: 10px;
+      align-self: stretch;
+      overflow: auto;
+    }
+
+    .canvas-panel {
+      padding: 8px;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .canvas-wrap {
+      flex: 1 1 auto;
+      min-height: 240px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: #ffffff;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    canvas.panning {
+      cursor: grab;
+    }
+
+    .canvas-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 7px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .canvas-toolbar .zoom-buttons {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .canvas-toolbar button {
+      padding: 5px 8px;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+
+    .section {
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+
+    .section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    h2 {
+      margin: 0 0 6px;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: #374151;
+    }
+
+    label {
+      display: block;
+      margin: 6px 0 3px;
+      font-size: 12px;
+      color: #374151;
+    }
+
+    select, input[type="number"] {
+      width: 100%;
+      padding: 6px 7px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: #ffffff;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    input[type="checkbox"] {
+      transform: translateY(1px);
+      margin-right: 6px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 7px 8px;
+      background: #111827;
+      color: white;
+      font-weight: 650;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    button.blue { background: var(--blue); }
+    button.red { background: var(--red); }
+
+    button:hover { filter: brightness(0.96); }
+    button:active { transform: translateY(1px); }
+
+    .hint {
+      color: var(--muted);
+      font-size: 11.5px;
+      line-height: 1.28;
+      margin: 6px 0 0;
+    }
+
+    .status {
+      font-size: 12px;
+      color: #111827;
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 7px;
+      line-height: 1.32;
+      min-height: 64px;
+      white-space: pre-line;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px 11px;
+      align-items: center;
+      margin-top: 7px;
+      font-size: 12px;
+      color: #374151;
+    }
+
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+    .dot, .line, .ring {
+      display: inline-block;
+      flex: 0 0 auto;
+    }
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+    }
+    .dot.red { background: var(--red); }
+    .dot.blue { background: var(--blue); }
+    .line {
+      width: 22px;
+      border-top: 3px solid #111827;
+    }
+    .line.dashed {
+      border-top: 2px dashed #374151;
+    }
+    .ring {
+      width: 15px;
+      height: 15px;
+      border: 3px solid #f59e0b;
+      border-radius: 999px;
+      background: transparent;
+    }
+
+    .footer-note {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .param-label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .tip {
+      width: 16px;
+      height: 16px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #eef2ff;
+      color: #3730a3;
+      border: 1px solid #c7d2fe;
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1;
+      cursor: help;
+      flex: 0 0 auto;
+    }
+
+    .tip:focus {
+      outline: 2px solid #93c5fd;
+      outline-offset: 1px;
+    }
+
+    .tooltip {
+      position: fixed;
+      z-index: 9999;
+      max-width: 380px;
+      padding: 9px 10px;
+      border-radius: 9px;
+      background: #111827;
+      color: #fff;
+      box-shadow: 0 10px 25px rgba(0,0,0,.22);
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: pre-line;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(3px);
+      transition: opacity .08s ease, transform .08s ease;
+    }
+
+    .tooltip.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+
+    @media (max-width: 900px) {
+      body { overflow: auto; }
+      main {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+      aside.panel { order: 2; max-height: none; }
+      .canvas-panel { order: 1; min-height: 60vh; }
+      .canvas-wrap { height: 58vh; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SVM interativo: separabilidade, kernels, margem e vetores de suporte</h1>
+    <p>Clique no plano para adicionar pontos, gere cenários sintéticos e ajuste um SVM binário diretamente no navegador.</p>
+  </header>
+
+  <main>
+    <aside class="panel">
+      <div class="section">
+        <h2>Dados</h2>
+        <label for="scenario" class="param-label">Cenário <span class="tip" tabindex="0" data-tip="Escolhe como os dados sintéticos são gerados.
+Separável: tenta deixar uma faixa vazia perto da fronteira geradora.
+Não separável: adiciona ruído e alguns rótulos trocados, criando violações de margem.">?</span></label>
+        <select id="scenario">
+          <option value="separable">Separável</option>
+          <option value="nonseparable">Não separável</option>
+        </select>
+
+        <label for="boundary" class="param-label">Fronteira geradora <span class="tip" tabindex="0" data-tip="Só afeta a geração dos pontos, não o otimizador.
+Reta: y − (0,45x + 0,1).
+Circular: região interna/externa de um círculo.
+Polinomial: curva quadrática.
+Depois o SVM tenta recuperar uma fronteira usando o kernel escolhido.">?</span></label>
+        <select id="boundary">
+          <option value="linear">Reta</option>
+          <option value="circle">Circular</option>
+          <option value="poly">Polinomial</option>
+        </select>
+
+        <label for="nPoints" class="param-label">Número de pontos gerados <span class="tip" tabindex="0" data-tip="Quantidade de observações no conjunto de treino.
+Na otimização dual aparecem α₁,...,αₙ, um multiplicador por ponto.
+Mais pontos deixam a visualização mais rica, mas o treino no navegador fica mais lento.">?</span></label>
+        <input id="nPoints" type="number" min="10" max="300" step="10" value="90" />
+
+        <div class="buttons">
+          <button id="generateBtn" class="blue">Gerar cenário</button>
+          <button id="clearBtn" class="secondary">Limpar</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Inserção manual</h2>
+        <label for="classToAdd" class="param-label">Classe adicionada por clique <span class="tip" tabindex="0" data-tip="Define o rótulo yᵢ do ponto que você vai inserir.
+O SVM usa yᵢ ∈ {−1,+1}.
+A restrição de margem é yᵢ f(xᵢ) ≥ 1 − ξᵢ.">?</span></label>
+        <select id="classToAdd">
+          <option value="1">Classe +1 / vermelha</option>
+          <option value="-1">Classe -1 / azul</option>
+        </select>
+        <p class="hint">Clique para inserir ponto. Shift + clique remove. Use zoom/pan no gráfico para trabalhar em telas menores.</p>
+        <label class="param-label"><input id="autoFit" type="checkbox" checked /> Reajustar automaticamente após clique <span class="tip" tabindex="0" data-tip="Quando ativo, cada ponto inserido/removeido dispara novo ajuste.
+A função de decisão é recalculada como f(x)=Σᵢ αᵢ yᵢ K(xᵢ,x)+b.">?</span></label>
+      </div>
+
+      <div class="section">
+        <h2>SVM</h2>
+        <label for="kernel" class="param-label">Kernel <span class="tip" tabindex="0" data-tip="Define K(x,z), isto é, o produto interno no espaço de características φ.
+No dual, o termo quadrático usa K(xᵢ,xⱼ):
+max Σᵢαᵢ − 1/2 Σᵢⱼ αᵢαⱼyᵢyⱼK(xᵢ,xⱼ).
+Linear: K=xᵀz. RBF: exp(−γ||x−z||²). Polinomial: (γxᵀz+coef0)^grau.">?</span></label>
+        <select id="kernel">
+          <option value="linear">Linear</option>
+          <option value="rbf">RBF / Gaussiano</option>
+          <option value="poly">Polinomial</option>
+        </select>
+
+        <div class="row">
+          <div>
+            <label for="C" class="param-label">Penalização C <span class="tip" tabindex="0" data-tip="Controla o custo das violações de margem.
+Primal: min 1/2||w||² + CΣᵢξᵢ, sujeito a yᵢ(wᵀφ(xᵢ)+b) ≥ 1−ξᵢ e ξᵢ≥0.
+Dual: 0 ≤ αᵢ ≤ C.
+C alto: penaliza erros mais forte, margem tende a ser menor.
+C baixo: tolera mais violações, margem tende a ser mais larga.">?</span></label>
+            <input id="C" type="number" min="0.01" max="1000" step="0.1" value="1" />
+          </div>
+          <div>
+            <label for="gamma" class="param-label">Gamma <span class="tip" tabindex="0" data-tip="Parâmetro do kernel.
+RBF: K(x,z)=exp(−γ||x−z||²). γ alto cria influência local e fronteiras mais onduladas; γ baixo suaviza.
+Polinomial: K(x,z)=(γxᵀz+coef0)^grau, escalando o produto interno antes da potência.
+No linear, γ não é usado.">?</span></label>
+            <input id="gamma" type="number" min="0.001" max="20" step="0.05" value="0.8" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="degree" class="param-label">Grau polinomial <span class="tip" tabindex="0" data-tip="Usado só no kernel polinomial.
+K(x,z)=(γxᵀz+coef0)^grau.
+Graus maiores aumentam a flexibilidade da fronteira, mas podem gerar sobreajuste.">?</span></label>
+            <input id="degree" type="number" min="2" max="8" step="1" value="3" />
+          </div>
+          <div>
+            <label for="coef0" class="param-label">Coef0 <span class="tip" tabindex="0" data-tip="Termo independente do kernel polinomial.
+K(x,z)=(γxᵀz+coef0)^grau.
+Coef0 controla o peso relativo entre termos de baixa ordem e termos de ordem alta.
+No RBF e no linear, coef0 não é usado.">?</span></label>
+            <input id="coef0" type="number" min="0" max="10" step="0.1" value="1" />
+          </div>
+        </div>
+
+        <div class="buttons">
+          <button id="fitBtn">Ajustar SVM</button>
+          <button id="resetViewBtn" class="secondary">Redesenhar</button>
+        </div>
+        <p class="hint">Para fronteiras circulares, use RBF. Para fronteiras polinomiais, compare RBF e polinomial.</p>
+      </div>
+
+      <div class="section">
+        <h2>Status</h2>
+        <div id="status" class="status">Gere um cenário ou clique para adicionar pontos.</div>
+      </div>
+    </aside>
+
+    <section class="panel canvas-panel">
+      <div class="canvas-toolbar">
+        <span>Zoom: roda do mouse ou botões. Pan: Alt + arrastar. Passe o mouse em “?” para ver as fórmulas.</span>
+        <div class="zoom-buttons">
+          <button id="zoomOutBtn" class="secondary">−</button>
+          <button id="zoomInBtn" class="secondary">+</button>
+          <button id="fitDataBtn" class="secondary">Enquadrar</button>
+          <button id="homeViewBtn" class="secondary">Reset</button>
+        </div>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="canvas" width="920" height="660" aria-label="Plano interativo para SVM"></canvas>
+      </div>
+      <div class="legend">
+        <span class="legend-item"><span class="dot red"></span> Classe +1</span>
+        <span class="legend-item"><span class="dot blue"></span> Classe -1</span>
+        <span class="legend-item"><span class="line"></span> Fronteira f(x)=0</span>
+        <span class="legend-item"><span class="line dashed"></span> Margens f(x)=±1</span>
+        <span class="legend-item"><span class="ring"></span> Vetor de suporte</span>
+      </div>
+      <div class="footer-note">
+        Em kernels não lineares, as curvas f(x)=±1 são uma visualização das margens funcionais no espaço de entrada. A margem geométrica exata é definida no espaço de características do kernel.
+      </div>
+    </section>
+  </main>
+  <div id="tooltip" class="tooltip" role="tooltip"></div>
+
+  <script>
+    "use strict";
+
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const statusEl = document.getElementById("status");
+    const tooltipEl = document.getElementById("tooltip");
+
+    const controls = {
+      scenario: document.getElementById("scenario"),
+      boundary: document.getElementById("boundary"),
+      nPoints: document.getElementById("nPoints"),
+      classToAdd: document.getElementById("classToAdd"),
+      autoFit: document.getElementById("autoFit"),
+      kernel: document.getElementById("kernel"),
+      C: document.getElementById("C"),
+      gamma: document.getElementById("gamma"),
+      degree: document.getElementById("degree"),
+      coef0: document.getElementById("coef0"),
+      generateBtn: document.getElementById("generateBtn"),
+      clearBtn: document.getElementById("clearBtn"),
+      fitBtn: document.getElementById("fitBtn"),
+      resetViewBtn: document.getElementById("resetViewBtn"),
+      zoomOutBtn: document.getElementById("zoomOutBtn"),
+      zoomInBtn: document.getElementById("zoomInBtn"),
+      fitDataBtn: document.getElementById("fitDataBtn"),
+      homeViewBtn: document.getElementById("homeViewBtn")
+    };
+
+    const initialView = {
+      xMin: -4,
+      xMax: 4,
+      yMin: -3,
+      yMax: 3
+    };
+
+    const view = { ...initialView };
+
+    const dragState = {
+      active: false,
+      startX: 0,
+      startY: 0,
+      viewAtStart: null
+    };
+
+    let points = [];
+    let model = null;
+    let lastTrainingInfo = null;
+
+    function randUniform(a, b) {
+      return a + Math.random() * (b - a);
+    }
+
+    function randn() {
+      let u = 0;
+      let v = 0;
+      while (u === 0) u = Math.random();
+      while (v === 0) v = Math.random();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    }
+
+    function clamp(value, lo, hi) {
+      return Math.max(lo, Math.min(hi, value));
+    }
+
+    function dot(a, b) {
+      let s = 0;
+      for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+      return s;
+    }
+
+    function sqDist(a, b) {
+      let s = 0;
+      for (let i = 0; i < a.length; i++) {
+        const d = a[i] - b[i];
+        s += d * d;
+      }
+      return s;
+    }
+
+    function kernelValue(a, b, options) {
+      if (options.kernel === "linear") {
+        return dot(a, b);
+      }
+      if (options.kernel === "rbf") {
+        return Math.exp(-options.gamma * sqDist(a, b));
+      }
+      if (options.kernel === "poly") {
+        return Math.pow(options.gamma * dot(a, b) + options.coef0, options.degree);
+      }
+      return dot(a, b);
+    }
+
+    function boundaryScore(x, y, type) {
+      if (type === "linear") {
+        return y - (0.45 * x + 0.1);
+      }
+      if (type === "circle") {
+        const cx = -0.1;
+        const cy = 0.05;
+        const r2 = 2.15;
+        return r2 - ((x - cx) * (x - cx) + (y - cy) * (y - cy));
+      }
+      if (type === "poly") {
+        return y - (0.22 * x * x + 0.16 * x - 1.15);
+      }
+      return y;
+    }
+
+    function generateDataset() {
+      const scenario = controls.scenario.value;
+      const boundary = controls.boundary.value;
+      const total = clamp(parseInt(controls.nPoints.value || "90", 10), 10, 300);
+      const targetPositive = Math.ceil(total / 2);
+      const targetNegative = total - targetPositive;
+      const result = [];
+      let pos = 0;
+      let neg = 0;
+      let tries = 0;
+
+      const marginByBoundary = {
+        linear: 0.33,
+        circle: 0.42,
+        poly: 0.38
+      };
+
+      while (result.length < total && tries < total * 600) {
+        tries++;
+        const x = randUniform(view.xMin + 0.35, view.xMax - 0.35);
+        const y = randUniform(view.yMin + 0.35, view.yMax - 0.35);
+        let s = boundaryScore(x, y, boundary);
+
+        if (scenario === "separable") {
+          if (Math.abs(s) < marginByBoundary[boundary]) continue;
+        } else {
+          const noiseScale = boundary === "circle" ? 0.75 : 0.62;
+          s += randn() * noiseScale;
+        }
+
+        let label = s >= 0 ? 1 : -1;
+        if (scenario === "nonseparable" && Math.random() < 0.08) {
+          label *= -1;
+        }
+
+        if (label === 1 && pos >= targetPositive) continue;
+        if (label === -1 && neg >= targetNegative) continue;
+
+        result.push({ x, y, label });
+        if (label === 1) pos++;
+        else neg++;
+      }
+
+      points = result;
+      model = null;
+      lastTrainingInfo = null;
+      setStatus(`Cenário gerado: ${scenario === "separable" ? "separável" : "não separável"}\nPontos: ${points.length}  |  +1: ${pos}  |  -1: ${neg}\nClique em “Ajustar SVM”.`);
+      draw();
+    }
+
+    function getOptions() {
+      return {
+        kernel: controls.kernel.value,
+        C: Math.max(0.0001, parseFloat(controls.C.value || "1")),
+        gamma: Math.max(0.0001, parseFloat(controls.gamma.value || "0.8")),
+        degree: clamp(parseInt(controls.degree.value || "3", 10), 2, 8),
+        coef0: parseFloat(controls.coef0.value || "1"),
+        tol: 1e-3,
+        eps: 1e-5,
+        maxPasses: 24,
+        maxIter: 18000
+      };
+    }
+
+    function trainSVM(data, options) {
+      const n = data.length;
+      if (n < 2) throw new Error("Adicione pelo menos dois pontos.");
+      const labels = data.map(p => p.label);
+      const hasPositive = labels.some(y => y === 1);
+      const hasNegative = labels.some(y => y === -1);
+      if (!hasPositive || !hasNegative) throw new Error("É preciso ter pontos das duas classes.");
+
+      const X = data.map(p => [p.x, p.y]);
+      const y = data.map(p => p.label);
+      const alpha = new Array(n).fill(0);
+      let b = 0;
+
+      const K = Array.from({ length: n }, () => new Array(n).fill(0));
+      for (let i = 0; i < n; i++) {
+        for (let j = i; j < n; j++) {
+          const val = kernelValue(X[i], X[j], options);
+          K[i][j] = val;
+          K[j][i] = val;
+        }
+      }
+
+      function outputIndex(i) {
+        let s = b;
+        for (let k = 0; k < n; k++) {
+          if (alpha[k] > 0) s += alpha[k] * y[k] * K[k][i];
+        }
+        return s;
+      }
+
+      let passes = 0;
+      let iter = 0;
+      let changedLastPass = 0;
+
+      while (passes < options.maxPasses && iter < options.maxIter) {
+        let numChanged = 0;
+        for (let i = 0; i < n; i++) {
+          const Ei = outputIndex(i) - y[i];
+          const violatesKKT =
+            (y[i] * Ei < -options.tol && alpha[i] < options.C - options.eps) ||
+            (y[i] * Ei > options.tol && alpha[i] > options.eps);
+
+          if (!violatesKKT) continue;
+
+          let j = i;
+          for (let guard = 0; guard < 12 && j === i; guard++) {
+            j = Math.floor(Math.random() * n);
+          }
+          if (j === i) j = (i + 1) % n;
+
+          const Ej = outputIndex(j) - y[j];
+          const aiOld = alpha[i];
+          const ajOld = alpha[j];
+
+          let L;
+          let H;
+          if (y[i] !== y[j]) {
+            L = Math.max(0, ajOld - aiOld);
+            H = Math.min(options.C, options.C + ajOld - aiOld);
+          } else {
+            L = Math.max(0, aiOld + ajOld - options.C);
+            H = Math.min(options.C, aiOld + ajOld);
+          }
+          if (Math.abs(L - H) < 1e-12) continue;
+
+          const eta = 2 * K[i][j] - K[i][i] - K[j][j];
+          if (eta >= -1e-12) continue;
+
+          alpha[j] = ajOld - y[j] * (Ei - Ej) / eta;
+          alpha[j] = clamp(alpha[j], L, H);
+
+          if (Math.abs(alpha[j] - ajOld) < 1e-5) {
+            alpha[j] = ajOld;
+            continue;
+          }
+
+          alpha[i] = aiOld + y[i] * y[j] * (ajOld - alpha[j]);
+
+          const b1 = b - Ei
+            - y[i] * (alpha[i] - aiOld) * K[i][i]
+            - y[j] * (alpha[j] - ajOld) * K[i][j];
+
+          const b2 = b - Ej
+            - y[i] * (alpha[i] - aiOld) * K[i][j]
+            - y[j] * (alpha[j] - ajOld) * K[j][j];
+
+          if (alpha[i] > options.eps && alpha[i] < options.C - options.eps) {
+            b = b1;
+          } else if (alpha[j] > options.eps && alpha[j] < options.C - options.eps) {
+            b = b2;
+          } else {
+            b = 0.5 * (b1 + b2);
+          }
+
+          numChanged++;
+        }
+
+        changedLastPass = numChanged;
+        passes = numChanged === 0 ? passes + 1 : 0;
+        iter++;
+      }
+
+      const support = [];
+      for (let i = 0; i < n; i++) {
+        if (alpha[i] > 1e-4) {
+          support.push({ index: i, alpha: alpha[i], x: X[i], y: y[i] });
+        }
+      }
+
+      let w = null;
+      let margin = null;
+      if (options.kernel === "linear") {
+        w = [0, 0];
+        for (let i = 0; i < n; i++) {
+          w[0] += alpha[i] * y[i] * X[i][0];
+          w[1] += alpha[i] * y[i] * X[i][1];
+        }
+        const normW = Math.sqrt(w[0] * w[0] + w[1] * w[1]);
+        margin = normW > 1e-12 ? 1 / normW : null;
+      }
+
+      const trained = {
+        X,
+        y,
+        alpha,
+        b,
+        support,
+        options,
+        w,
+        margin,
+        iterations: iter,
+        changedLastPass,
+        predictValue(x) {
+          let s = this.b;
+          for (let k = 0; k < this.X.length; k++) {
+            if (this.alpha[k] > 1e-6) {
+              s += this.alpha[k] * this.y[k] * kernelValue(this.X[k], x, this.options);
+            }
+          }
+          return s;
+        },
+        predictLabel(x) {
+          return this.predictValue(x) >= 0 ? 1 : -1;
+        }
+      };
+
+      let correct = 0;
+      for (let i = 0; i < n; i++) {
+        if (trained.predictLabel(X[i]) === y[i]) correct++;
+      }
+
+      trained.trainingAccuracy = correct / n;
+      return trained;
+    }
+
+    function fitCurrentSVM({ silent = false } = {}) {
+      try {
+        const options = getOptions();
+        model = trainSVM(points, options);
+        lastTrainingInfo = {
+          n: points.length,
+          sv: model.support.length,
+          bounded: model.support.filter(sv => sv.alpha > options.C - 1e-3).length,
+          acc: model.trainingAccuracy,
+          iterations: model.iterations,
+          margin: model.margin
+        };
+        updateTrainingStatus();
+        draw();
+      } catch (err) {
+        if (!silent) setStatus(err.message || String(err));
+        model = null;
+        draw();
+      }
+    }
+
+    function updateTrainingStatus() {
+      if (!model || !lastTrainingInfo) return;
+      const opt = model.options;
+      let msg = "SVM ajustado.\n";
+      msg += `Kernel: ${opt.kernel}  |  C: ${fmt(opt.C)}\n`;
+      if (opt.kernel !== "linear") msg += `Gamma: ${fmt(opt.gamma)}${opt.kernel === "poly" ? `  |  Grau: ${opt.degree}  |  Coef0: ${fmt(opt.coef0)}` : ""}\n`;
+      msg += `Acurácia no treino: ${(100 * lastTrainingInfo.acc).toFixed(1)}%\n`;
+      msg += `Vetores de suporte: ${lastTrainingInfo.sv}/${lastTrainingInfo.n}`;
+      if (lastTrainingInfo.bounded > 0) msg += `  |  no limite C: ${lastTrainingInfo.bounded}`;
+      if (lastTrainingInfo.margin != null) msg += `\nMargem linear: ${fmt(lastTrainingInfo.margin)}`;
+      msg += `\nIterações SMO: ${lastTrainingInfo.iterations}`;
+      setStatus(msg);
+    }
+
+    function fmt(x) {
+      if (!Number.isFinite(x)) return "—";
+      if (Math.abs(x) >= 100) return x.toFixed(1);
+      if (Math.abs(x) >= 10) return x.toFixed(2);
+      if (Math.abs(x) >= 1) return x.toFixed(3);
+      return x.toPrecision(3);
+    }
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function worldToCanvas(x, y) {
+      const px = (x - view.xMin) / (view.xMax - view.xMin) * canvas.width;
+      const py = canvas.height - (y - view.yMin) / (view.yMax - view.yMin) * canvas.height;
+      return [px, py];
+    }
+
+    function canvasToWorld(px, py) {
+      const rect = canvas.getBoundingClientRect();
+      const sx = canvas.width / rect.width;
+      const sy = canvas.height / rect.height;
+      const cx = (px - rect.left) * sx;
+      const cy = (py - rect.top) * sy;
+      const x = view.xMin + cx / canvas.width * (view.xMax - view.xMin);
+      const y = view.yMin + (canvas.height - cy) / canvas.height * (view.yMax - view.yMin);
+      return [x, y];
+    }
+
+    function resizeCanvasToDisplay() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.max(320, Math.round(rect.width * dpr));
+      const height = Math.max(240, Math.round(rect.height * dpr));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+    }
+
+    function zoomView(factor, centerX = 0, centerY = 0) {
+      const oldW = view.xMax - view.xMin;
+      const oldH = view.yMax - view.yMin;
+      const newW = clamp(oldW * factor, 0.45, 30);
+      const newH = clamp(oldH * factor, 0.35, 24);
+      view.xMin = centerX - (centerX - view.xMin) / oldW * newW;
+      view.xMax = view.xMin + newW;
+      view.yMin = centerY - (centerY - view.yMin) / oldH * newH;
+      view.yMax = view.yMin + newH;
+      draw();
+    }
+
+    function resetWorldView() {
+      Object.assign(view, initialView);
+      draw();
+    }
+
+    function fitDataView() {
+      if (points.length === 0) {
+        resetWorldView();
+        return;
+      }
+      let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+      for (const p of points) {
+        xMin = Math.min(xMin, p.x);
+        xMax = Math.max(xMax, p.x);
+        yMin = Math.min(yMin, p.y);
+        yMax = Math.max(yMax, p.y);
+      }
+      const padX = Math.max(0.6, (xMax - xMin) * 0.22);
+      const padY = Math.max(0.45, (yMax - yMin) * 0.22);
+      view.xMin = xMin - padX;
+      view.xMax = xMax + padX;
+      view.yMin = yMin - padY;
+      view.yMax = yMax + padY;
+      draw();
+    }
+
+    function draw() {
+      resizeCanvasToDisplay();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      if (model) {
+        drawDecisionRegion(model);
+      }
+
+      drawGridAndAxes();
+
+      if (model) {
+        drawContours(model);
+      }
+
+      drawPoints();
+    }
+
+    function drawDecisionRegion(m) {
+      const step = 7;
+      for (let px = 0; px < canvas.width; px += step) {
+        for (let py = 0; py < canvas.height; py += step) {
+          const [x, y] = pixelCellToWorld(px + step * 0.5, py + step * 0.5);
+          const val = m.predictValue([x, y]);
+          const opacity = Math.min(0.22, 0.06 + Math.abs(Math.tanh(val)) * 0.14);
+          ctx.fillStyle = val >= 0 ? `rgba(220, 38, 38, ${opacity})` : `rgba(37, 99, 235, ${opacity})`;
+          ctx.fillRect(px, py, step + 1, step + 1);
+        }
+      }
+    }
+
+    function pixelCellToWorld(cx, cy) {
+      const x = view.xMin + cx / canvas.width * (view.xMax - view.xMin);
+      const y = view.yMin + (canvas.height - cy) / canvas.height * (view.yMax - view.yMin);
+      return [x, y];
+    }
+
+    function drawGridAndAxes() {
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(17, 24, 39, 0.08)";
+
+      for (let x = Math.ceil(view.xMin); x <= Math.floor(view.xMax); x++) {
+        const [px] = worldToCanvas(x, 0);
+        line(px, 0, px, canvas.height);
+      }
+      for (let y = Math.ceil(view.yMin); y <= Math.floor(view.yMax); y++) {
+        const [, py] = worldToCanvas(0, y);
+        line(0, py, canvas.width, py);
+      }
+
+      ctx.strokeStyle = "rgba(17, 24, 39, 0.35)";
+      ctx.lineWidth = 1.2;
+      const [x0] = worldToCanvas(0, 0);
+      const [, y0] = worldToCanvas(0, 0);
+      line(x0, 0, x0, canvas.height);
+      line(0, y0, canvas.width, y0);
+
+      ctx.fillStyle = "rgba(17, 24, 39, 0.55)";
+      ctx.font = "12px system-ui, sans-serif";
+      ctx.fillText("x₁", canvas.width - 22, y0 - 8);
+      ctx.fillText("x₂", x0 + 8, 16);
+      ctx.restore();
+    }
+
+    function line(x1, y1, x2, y2) {
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+
+    function drawContours(m) {
+      const nx = 100;
+      const ny = 76;
+      const values = Array.from({ length: ny + 1 }, () => new Array(nx + 1).fill(0));
+
+      for (let iy = 0; iy <= ny; iy++) {
+        const y = view.yMin + iy / ny * (view.yMax - view.yMin);
+        for (let ix = 0; ix <= nx; ix++) {
+          const x = view.xMin + ix / nx * (view.xMax - view.xMin);
+          values[iy][ix] = m.predictValue([x, y]);
+        }
+      }
+
+      drawIso(values, nx, ny, 0, "rgba(17, 24, 39, 0.95)", 2.4, []);
+      drawIso(values, nx, ny, 1, "rgba(55, 65, 81, 0.86)", 1.5, [7, 5]);
+      drawIso(values, nx, ny, -1, "rgba(55, 65, 81, 0.86)", 1.5, [7, 5]);
+    }
+
+    function drawIso(values, nx, ny, iso, strokeStyle, lineWidth, dash) {
+      ctx.save();
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = lineWidth;
+      ctx.setLineDash(dash);
+      ctx.beginPath();
+
+      for (let iy = 0; iy < ny; iy++) {
+        for (let ix = 0; ix < nx; ix++) {
+          const x0 = view.xMin + ix / nx * (view.xMax - view.xMin);
+          const x1 = view.xMin + (ix + 1) / nx * (view.xMax - view.xMin);
+          const y0 = view.yMin + iy / ny * (view.yMax - view.yMin);
+          const y1 = view.yMin + (iy + 1) / ny * (view.yMax - view.yMin);
+
+          const p = [
+            [x0, y0],
+            [x1, y0],
+            [x1, y1],
+            [x0, y1]
+          ];
+          const v = [
+            values[iy][ix],
+            values[iy][ix + 1],
+            values[iy + 1][ix + 1],
+            values[iy + 1][ix]
+          ];
+
+          const cuts = [];
+          addCut(cuts, p[0], p[1], v[0], v[1], iso);
+          addCut(cuts, p[1], p[2], v[1], v[2], iso);
+          addCut(cuts, p[2], p[3], v[2], v[3], iso);
+          addCut(cuts, p[3], p[0], v[3], v[0], iso);
+
+          if (cuts.length === 2) {
+            moveLineWorld(cuts[0], cuts[1]);
+          } else if (cuts.length === 4) {
+            moveLineWorld(cuts[0], cuts[1]);
+            moveLineWorld(cuts[2], cuts[3]);
+          }
+        }
+      }
+
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function addCut(cuts, pA, pB, vA, vB, iso) {
+      const a = vA - iso;
+      const b = vB - iso;
+      if (a === 0 && b === 0) return;
+      if ((a <= 0 && b > 0) || (a > 0 && b <= 0)) {
+        const t = Math.abs(vB - vA) < 1e-12 ? 0.5 : (iso - vA) / (vB - vA);
+        cuts.push([
+          pA[0] + t * (pB[0] - pA[0]),
+          pA[1] + t * (pB[1] - pA[1])
+        ]);
+      }
+    }
+
+    function moveLineWorld(a, b) {
+      const [x1, y1] = worldToCanvas(a[0], a[1]);
+      const [x2, y2] = worldToCanvas(b[0], b[1]);
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+
+    function drawPoints() {
+      const supportMap = new Map();
+      if (model) {
+        for (const sv of model.support) supportMap.set(sv.index, sv);
+      }
+
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        const [px, py] = worldToCanvas(p.x, p.y);
+        const isSV = supportMap.has(i);
+        const sv = supportMap.get(i);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(px, py, 5.2, 0, Math.PI * 2);
+        ctx.fillStyle = p.label === 1 ? "#dc2626" : "#2563eb";
+        ctx.fill();
+        ctx.lineWidth = 1.3;
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
+        ctx.stroke();
+
+        if (isSV) {
+          ctx.beginPath();
+          ctx.arc(px, py, sv.alpha > model.options.C - 1e-3 ? 10.5 : 9.2, 0, Math.PI * 2);
+          ctx.lineWidth = sv.alpha > model.options.C - 1e-3 ? 3.3 : 2.4;
+          ctx.strokeStyle = "#f59e0b";
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+
+    function removeNearestPoint(x, y) {
+      if (points.length === 0) return false;
+      let bestIndex = -1;
+      let bestDist = Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const dx = points[i].x - x;
+        const dy = points[i].y - y;
+        const d = dx * dx + dy * dy;
+        if (d < bestDist) {
+          bestDist = d;
+          bestIndex = i;
+        }
+      }
+      if (bestIndex >= 0 && bestDist < 0.20 * 0.20) {
+        points.splice(bestIndex, 1);
+        return true;
+      }
+      return false;
+    }
+
+    function handleCanvasPointEdit(event) {
+      const [x, y] = canvasToWorld(event.clientX, event.clientY);
+      if (event.shiftKey) {
+        const removed = removeNearestPoint(x, y);
+        if (removed) {
+          model = null;
+          setStatus(`Ponto removido. Pontos restantes: ${points.length}`);
+          if (controls.autoFit.checked && points.length >= 2) fitCurrentSVM({ silent: true });
+          draw();
+        }
+        return;
+      }
+
+      const label = parseInt(controls.classToAdd.value, 10);
+      points.push({ x, y, label });
+      model = null;
+      setStatus(`Ponto adicionado à classe ${label}. Total: ${points.length}`);
+      if (controls.autoFit.checked && points.length >= 2 && points.some(p => p.label === 1) && points.some(p => p.label === -1)) {
+        fitCurrentSVM({ silent: true });
+      } else {
+        draw();
+      }
+    }
+
+    let suppressNextClick = false;
+
+    canvas.addEventListener("mousedown", (event) => {
+      if (!event.altKey) return;
+      event.preventDefault();
+      dragState.active = true;
+      dragState.startX = event.clientX;
+      dragState.startY = event.clientY;
+      dragState.viewAtStart = { ...view };
+      suppressNextClick = false;
+      canvas.classList.add("panning");
+    });
+
+    window.addEventListener("mousemove", (event) => {
+      if (!dragState.active) return;
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const dx = event.clientX - dragState.startX;
+      const dy = event.clientY - dragState.startY;
+      const wx = dx / rect.width * (dragState.viewAtStart.xMax - dragState.viewAtStart.xMin);
+      const wy = dy / rect.height * (dragState.viewAtStart.yMax - dragState.viewAtStart.yMin);
+      view.xMin = dragState.viewAtStart.xMin - wx;
+      view.xMax = dragState.viewAtStart.xMax - wx;
+      view.yMin = dragState.viewAtStart.yMin + wy;
+      view.yMax = dragState.viewAtStart.yMax + wy;
+      if (Math.abs(dx) + Math.abs(dy) > 4) suppressNextClick = true;
+      draw();
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!dragState.active) return;
+      dragState.active = false;
+      dragState.viewAtStart = null;
+      canvas.classList.remove("panning");
+    });
+
+    canvas.addEventListener("click", (event) => {
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        return;
+      }
+      if (event.altKey) return;
+      handleCanvasPointEdit(event);
+    });
+
+    canvas.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const [x, y] = canvasToWorld(event.clientX, event.clientY);
+      const factor = event.deltaY < 0 ? 0.82 : 1.22;
+      zoomView(factor, x, y);
+    }, { passive: false });
+
+    controls.generateBtn.addEventListener("click", generateDataset);
+    controls.clearBtn.addEventListener("click", () => {
+      points = [];
+      model = null;
+      lastTrainingInfo = null;
+      setStatus("Dados limpos. Clique no plano para adicionar pontos.");
+      draw();
+    });
+    controls.fitBtn.addEventListener("click", () => fitCurrentSVM());
+    controls.resetViewBtn.addEventListener("click", draw);
+    controls.zoomInBtn.addEventListener("click", () => zoomView(0.82, (view.xMin + view.xMax) / 2, (view.yMin + view.yMax) / 2));
+    controls.zoomOutBtn.addEventListener("click", () => zoomView(1.22, (view.xMin + view.xMax) / 2, (view.yMin + view.yMax) / 2));
+    controls.fitDataBtn.addEventListener("click", fitDataView);
+    controls.homeViewBtn.addEventListener("click", resetWorldView);
+    window.addEventListener("resize", draw);
+
+    [controls.kernel, controls.C, controls.gamma, controls.degree, controls.coef0].forEach(el => {
+      el.addEventListener("change", () => {
+        if (points.length >= 2 && points.some(p => p.label === 1) && points.some(p => p.label === -1)) {
+          fitCurrentSVM({ silent: true });
+        }
+      });
+    });
+
+
+
+    function positionTooltip(event) {
+      if (!tooltipEl.classList.contains("visible")) return;
+      const pad = 12;
+      const gap = 14;
+      const targetRect = event.currentTarget.getBoundingClientRect();
+      const baseX = Number.isFinite(event.clientX) ? event.clientX : targetRect.right;
+      const baseY = Number.isFinite(event.clientY) ? event.clientY : targetRect.bottom;
+      let x = baseX + gap;
+      let y = baseY + gap;
+      const rect = tooltipEl.getBoundingClientRect();
+      if (x + rect.width + pad > window.innerWidth) x = baseX - rect.width - gap;
+      if (y + rect.height + pad > window.innerHeight) y = baseY - rect.height - gap;
+      tooltipEl.style.left = Math.max(pad, x) + "px";
+      tooltipEl.style.top = Math.max(pad, y) + "px";
+    }
+
+    function showTooltip(event) {
+      const text = event.currentTarget.dataset.tip;
+      if (!text) return;
+      tooltipEl.textContent = text;
+      tooltipEl.classList.add("visible");
+      positionTooltip(event);
+    }
+
+    function hideTooltip() {
+      tooltipEl.classList.remove("visible");
+    }
+
+    document.querySelectorAll(".tip").forEach(el => {
+      el.addEventListener("mouseenter", showTooltip);
+      el.addEventListener("mousemove", positionTooltip);
+      el.addEventListener("mouseleave", hideTooltip);
+      el.addEventListener("focus", showTooltip);
+      el.addEventListener("blur", hideTooltip);
+    });
+
+
+    draw();
+    generateDataset();
+  </script>
+</body>
+</html>
