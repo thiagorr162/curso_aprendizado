@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PCA Interativo — Projeções, Scores e Variância</title>
+<style>
+  :root{
+    --bg:#f5f7fb;
+    --panel:#ffffff;
+    --text:#1f2937;
+    --muted:#667085;
+    --border:#d9e0ea;
+    --accent:#2563eb;
+    --accent2:#dc2626;
+    --pc1:#059669;
+    --pc2:#7c3aed;
+    --proj:#f59e0b;
+    --shadow:0 10px 30px rgba(31,41,55,.08);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background:var(--bg);
+    color:var(--text);
+  }
+  header{
+    padding:24px clamp(16px,4vw,48px);
+    background:linear-gradient(135deg,#0f172a,#1e3a8a);
+    color:white;
+  }
+  header h1{margin:0 0 8px;font-size:clamp(24px,3vw,40px)}
+  header p{margin:0;max-width:900px;color:#dbeafe;line-height:1.55}
+  main{
+    padding:24px clamp(14px,3vw,36px) 44px;
+    max-width:1500px;
+    margin:auto;
+  }
+  .grid{
+    display:grid;
+    grid-template-columns:minmax(280px,360px) minmax(0,1fr);
+    gap:20px;
+    align-items:start;
+  }
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    box-shadow:var(--shadow);
+  }
+  .controls{padding:18px;position:sticky;top:14px}
+  .controls h2,.viz h2,.explain h2{margin:0 0 14px}
+  .control{margin-bottom:16px}
+  label{display:block;font-weight:650;margin-bottom:7px}
+  input[type="range"]{width:100%}
+  select,button{
+    width:100%;
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:10px 12px;
+    background:white;
+    color:var(--text);
+    font-size:14px;
+  }
+  button{
+    cursor:pointer;
+    font-weight:700;
+    transition:.15s ease;
+  }
+  button:hover{transform:translateY(-1px);border-color:#9fb5d9}
+  .primary{background:var(--accent);color:white;border-color:var(--accent)}
+  .button-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .check{
+    display:flex;
+    gap:9px;
+    align-items:center;
+    margin:9px 0;
+    font-size:14px;
+  }
+  .check input{transform:scale(1.1)}
+  .value{
+    float:right;
+    color:var(--accent);
+    font-variant-numeric:tabular-nums;
+  }
+  .viz{padding:18px}
+  .canvas-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+  }
+  .canvas-card{
+    border:1px solid var(--border);
+    border-radius:14px;
+    overflow:hidden;
+    background:#fbfdff;
+  }
+  .canvas-card h3{
+    margin:0;
+    padding:11px 13px;
+    font-size:15px;
+    border-bottom:1px solid var(--border);
+    background:#f8fafc;
+  }
+  canvas{display:block;width:100%;height:420px;cursor:pointer}
+  .click-hint{
+    padding:10px 12px;
+    border:1px dashed #9fb5d9;
+    border-radius:10px;
+    background:#f8fbff;
+    color:var(--muted);
+    font-size:13px;
+    line-height:1.45;
+  }
+  .metrics{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(150px,1fr));
+    gap:10px;
+    margin-top:14px;
+  }
+  .metric{
+    border:1px solid var(--border);
+    background:#fbfdff;
+    border-radius:12px;
+    padding:11px;
+    min-height:78px;
+  }
+  .metric .k{font-size:12px;color:var(--muted);margin-bottom:5px}
+  .metric .v{font-size:17px;font-weight:750;font-variant-numeric:tabular-nums}
+  .formula{
+    font-family:"SFMono-Regular",Consolas,monospace;
+    background:#0f172a;
+    color:#e2e8f0;
+    padding:14px;
+    border-radius:12px;
+    overflow:auto;
+    line-height:1.55;
+  }
+  .explain{margin-top:20px;padding:20px}
+  .two-col{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:18px;
+  }
+  .note{
+    border-left:4px solid var(--accent);
+    background:#eff6ff;
+    padding:12px 14px;
+    border-radius:8px;
+    line-height:1.55;
+  }
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 9px;border-bottom:1px solid var(--border);text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  .legend{
+    display:flex;flex-wrap:wrap;gap:12px;margin:10px 0 0;font-size:13px;color:var(--muted)
+  }
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+  .small{font-size:13px;color:var(--muted);line-height:1.5}
+  @media (max-width:1050px){
+    .grid{grid-template-columns:1fr}
+    .controls{position:static}
+    .metrics{grid-template-columns:repeat(2,1fr)}
+  }
+  @media (max-width:760px){
+    .canvas-grid,.two-col{grid-template-columns:1fr}
+    canvas{height:360px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>PCA interativo</h1>
+  <p>
+    Ajuste a direção <strong>v</strong>, observe as projeções escalares, os vetores projetados,
+    os scores, a variância projetada e a direção que o PCA escolhe para maximizar essa variância.
+  </p>
+</header>
+
+<main>
+  <div class="grid">
+    <section class="panel controls">
+      <h2>Controles</h2>
+
+      <div class="control">
+        <label for="dataset">Formato dos dados</label>
+        <select id="dataset">
+          <option value="positive">Correlação positiva</option>
+          <option value="negative">Correlação negativa</option>
+          <option value="vertical">Nuvem quase vertical</option>
+          <option value="isotropic">Nuvem quase circular</option>
+        </select>
+      </div>
+
+      <div class="control">
+        <label for="n">Número de observações <span class="value" id="nVal">36</span></label>
+        <input id="n" type="range" min="8" max="100" value="36" />
+      </div>
+
+      <div class="control">
+        <label for="noise">Ruído <span class="value" id="noiseVal">0.45</span></label>
+        <input id="noise" type="range" min="0.05" max="1.6" step="0.05" value="0.45" />
+      </div>
+
+      <div class="control">
+        <label for="angle">Ângulo da direção v <span class="value" id="angleVal">25°</span></label>
+        <input id="angle" type="range" min="0" max="180" step="1" value="25" />
+      </div>
+
+      <div class="control">
+        <label>Observação destacada <span class="value" id="selectedVal">1</span></label>
+        <div class="click-hint">
+          Clique em uma bolinha no gráfico original ou no gráfico de scores.
+        </div>
+      </div>
+
+      <div class="check"><input id="center" type="checkbox" checked><label for="center" style="margin:0">Centralizar os dados</label></div>
+      <div class="check"><input id="showProj" type="checkbox" checked><label for="showProj" style="margin:0">Mostrar projeções</label></div>
+      <div class="check"><input id="showPCA" type="checkbox" checked><label for="showPCA" style="margin:0">Mostrar eixos do PCA</label></div>
+      <div class="check"><input id="showRecon" type="checkbox"><label for="showRecon" style="margin:0">Mostrar reconstrução usando PC1</label></div>
+
+      <div class="button-row" style="margin-top:14px">
+        <button class="primary" id="regen">Gerar novos dados</button>
+        <button id="usePC1">Usar direção PC1</button>
+      </div>
+
+      <p class="small">
+        Dica: mova o ângulo de <strong>v</strong> e observe quando
+        <code>vᵀSv</code> atinge o maior valor. Esse máximo ocorre na primeira componente principal.
+      </p>
+    </section>
+
+    <section class="panel viz">
+      <h2>Visualização</h2>
+
+      <div class="canvas-grid">
+        <div class="canvas-card">
+          <h3>Espaço original e projeções</h3>
+          <canvas id="dataCanvas"></canvas>
+        </div>
+        <div class="canvas-card">
+          <h3>Scores na direção v</h3>
+          <canvas id="scoreCanvas"></canvas>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span><span class="dot" style="background:#2563eb"></span>observações</span>
+        <span><span class="dot" style="background:#dc2626"></span>observação selecionada</span>
+        <span><span class="dot" style="background:#f59e0b"></span>direção v e projeções</span>
+        <span><span class="dot" style="background:#059669"></span>PC1</span>
+        <span><span class="dot" style="background:#7c3aed"></span>PC2</span>
+      </div>
+
+      <div class="metrics">
+        <div class="metric"><div class="k">Média dos scores</div><div class="v" id="meanScore">0</div></div>
+        <div class="metric"><div class="k">Variância dos scores</div><div class="v" id="varScore">0</div></div>
+        <div class="metric"><div class="k">Maior autovalor λ₁</div><div class="v" id="lambda1">0</div></div>
+        <div class="metric"><div class="k">Variância explicada por PC1</div><div class="v" id="explained">0%</div></div>
+        <div class="metric"><div class="k">Direção escolhida v</div><div class="v" id="vVector">(0,0)</div></div>
+        <div class="metric"><div class="k">Direção PC1</div><div class="v" id="pc1Vector">(0,0)</div></div>
+        <div class="metric"><div class="k">Score selecionado zᵢ</div><div class="v" id="selectedScore">0</div></div>
+        <div class="metric"><div class="k">Erro de reconstrução PC1</div><div class="v" id="reconError">0</div></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel explain">
+    <h2>O que está sendo calculado</h2>
+    <div class="two-col">
+      <div>
+        <h3>1. Projeção escalar e score</h3>
+        <p>
+          Para uma observação centralizada <strong>x̃ᵢ</strong> e uma direção unitária
+          <strong>v</strong>, o número
+        </p>
+        <div class="formula">zᵢ = x̃ᵢᵀv</div>
+        <p>
+          é a coordenada da observação ao longo da direção <strong>v</strong>.
+          Esse número é chamado de <strong>score</strong>.
+        </p>
+
+        <h3>2. Projeção vetorial</h3>
+        <p>O ponto efetivamente projetado sobre a reta gerada por <strong>v</strong> é</p>
+        <div class="formula">projᵥ(x̃ᵢ) = (x̃ᵢᵀv)v = zᵢv</div>
+        <p>
+          Assim, o score é um escalar; a projeção vetorial é um vetor no espaço original.
+        </p>
+      </div>
+
+      <div>
+        <h3>3. Todos os scores</h3>
+        <div class="formula">z = X̃v</div>
+        <p>
+          Cada entrada de <strong>z</strong> é o score de uma observação.
+          Quando as colunas de <strong>X̃</strong> têm média zero,
+          qualquer combinação linear delas também tem média zero.
+        </p>
+
+        <h3>4. Variância ao longo de v</h3>
+        <div class="formula">Var(z) = zᵀz/(n−1) = vᵀSv</div>
+        <p>
+          O PCA escolhe a direção unitária que maximiza essa quantidade.
+        </p>
+
+        <h3>5. Reconstrução com uma componente</h3>
+        <div class="formula">X̂₁ = zvᵀ = X̃vvᵀ</div>
+        <p>
+          Quando <strong>v = v₁</strong>, obtemos a melhor reconstrução de posto 1
+          no sentido do erro quadrático.
+        </p>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>Interpretação:</strong> os loadings determinam as direções principais;
+      os scores determinam onde cada observação está localizada nessas direções.
+    </div>
+
+    <h3 style="margin-top:22px">Primeiras observações</h3>
+    <div style="overflow:auto">
+      <table>
+        <thead>
+          <tr><th>i</th><th>x̃ᵢ₁</th><th>x̃ᵢ₂</th><th>zᵢ = x̃ᵢᵀv</th><th>zᵢv₁</th><th>zᵢv₂</th></tr>
+        </thead>
+        <tbody id="scoreTable"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const els = {
+    dataset: document.getElementById('dataset'),
+    n: document.getElementById('n'),
+    noise: document.getElementById('noise'),
+    angle: document.getElementById('angle'),
+    center: document.getElementById('center'),
+    showProj: document.getElementById('showProj'),
+    showPCA: document.getElementById('showPCA'),
+    showRecon: document.getElementById('showRecon'),
+    regen: document.getElementById('regen'),
+    usePC1: document.getElementById('usePC1'),
+    nVal: document.getElementById('nVal'),
+    noiseVal: document.getElementById('noiseVal'),
+    angleVal: document.getElementById('angleVal'),
+    selectedVal: document.getElementById('selectedVal'),
+    meanScore: document.getElementById('meanScore'),
+    varScore: document.getElementById('varScore'),
+    lambda1: document.getElementById('lambda1'),
+    explained: document.getElementById('explained'),
+    vVector: document.getElementById('vVector'),
+    pc1Vector: document.getElementById('pc1Vector'),
+    selectedScore: document.getElementById('selectedScore'),
+    reconError: document.getElementById('reconError'),
+    scoreTable: document.getElementById('scoreTable'),
+    dataCanvas: document.getElementById('dataCanvas'),
+    scoreCanvas: document.getElementById('scoreCanvas')
+  };
+
+  let rawData = [];
+  let seedCounter = 1;
+  let selectedIndex = 0;
+  let dataHitAreas = [];
+  let scoreHitAreas = [];
+
+  function randn() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
+  function generateData() {
+    const n = Number(els.n.value);
+    const noise = Number(els.noise.value);
+    const type = els.dataset.value;
+    rawData = [];
+
+    for (let i = 0; i < n; i++) {
+      const t = randn() * 1.8;
+      let x, y;
+      if (type === 'positive') {
+        x = t + 0.35 * noise * randn();
+        y = 0.85 * t + noise * randn();
+      } else if (type === 'negative') {
+        x = t + 0.35 * noise * randn();
+        y = -0.9 * t + noise * randn();
+      } else if (type === 'vertical') {
+        x = 0.35 * noise * randn();
+        y = 1.8 * t + noise * randn();
+      } else {
+        x = 1.2 * randn();
+        y = 1.2 * randn();
+      }
+      rawData.push([x + 1.6, y - 0.8]);
+    }
+
+    selectedIndex = Math.min(selectedIndex, n - 1);
+    seedCounter++;
+    update();
+  }
+
+  function centeredData() {
+    const n = rawData.length;
+    const mean = rawData.reduce((a,p)=>[a[0]+p[0],a[1]+p[1]],[0,0]).map(x=>x/n);
+    const data = els.center.checked
+      ? rawData.map(p=>[p[0]-mean[0],p[1]-mean[1]])
+      : rawData.map(p=>[...p]);
+    return {data, mean};
+  }
+
+  function covariance(data) {
+    const n = data.length;
+    const m = data.reduce((a,p)=>[a[0]+p[0],a[1]+p[1]],[0,0]).map(x=>x/n);
+    let a=0,b=0,d=0;
+    for (const p of data) {
+      const x=p[0]-m[0], y=p[1]-m[1];
+      a += x*x; b += x*y; d += y*y;
+    }
+    const denom = Math.max(1,n-1);
+    return [[a/denom,b/denom],[b/denom,d/denom]];
+  }
+
+  function eig2(S) {
+    const a=S[0][0], b=S[0][1], d=S[1][1];
+    const tr=a+d;
+    const disc=Math.sqrt((a-d)*(a-d)+4*b*b);
+    let l1=(tr+disc)/2, l2=(tr-disc)/2;
+    let v1;
+    if (Math.abs(b) > 1e-10) v1=[b,l1-a];
+    else v1 = a>=d ? [1,0] : [0,1];
+    const norm=Math.hypot(v1[0],v1[1]) || 1;
+    v1=[v1[0]/norm,v1[1]/norm];
+    if (v1[0] < 0) v1=[-v1[0],-v1[1]];
+    const v2=[-v1[1],v1[0]];
+    return {l1,l2,v1,v2};
+  }
+
+  function fmt(x,d=3) {
+    if (!Number.isFinite(x)) return '—';
+    return Number(x).toFixed(d);
+  }
+
+  function setupCanvas(canvas) {
+    const rect=canvas.getBoundingClientRect();
+    const dpr=window.devicePixelRatio || 1;
+    canvas.width=Math.max(1,Math.floor(rect.width*dpr));
+    canvas.height=Math.max(1,Math.floor(rect.height*dpr));
+    const ctx=canvas.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    return {ctx,w:rect.width,h:rect.height};
+  }
+
+  function drawArrow(ctx,x1,y1,x2,y2,color,width=2) {
+    const ang=Math.atan2(y2-y1,x2-x1);
+    ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=width;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    const s=8;
+    ctx.beginPath();
+    ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-s*Math.cos(ang-Math.PI/6),y2-s*Math.sin(ang-Math.PI/6));
+    ctx.lineTo(x2-s*Math.cos(ang+Math.PI/6),y2-s*Math.sin(ang+Math.PI/6));
+    ctx.closePath();ctx.fill();
+  }
+
+  function drawData(data, v, eig, scores, projections, selectedIndex) {
+    const {ctx,w,h}=setupCanvas(els.dataCanvas);
+    ctx.clearRect(0,0,w,h);
+    dataHitAreas = [];
+
+    let maxAbs=1;
+    for (const p of data) maxAbs=Math.max(maxAbs,Math.abs(p[0]),Math.abs(p[1]));
+    for (const p of projections) maxAbs=Math.max(maxAbs,Math.abs(p[0]),Math.abs(p[1]));
+    maxAbs*=1.22;
+
+    const pad=34;
+    const scale=Math.min((w-2*pad)/(2*maxAbs),(h-2*pad)/(2*maxAbs));
+    const sx=x=>w/2+x*scale;
+    const sy=y=>h/2-y*scale;
+
+    ctx.strokeStyle='#e2e8f0';ctx.lineWidth=1;
+    for(let k=-Math.floor(maxAbs);k<=Math.floor(maxAbs);k++){
+      ctx.beginPath();ctx.moveTo(sx(k),pad);ctx.lineTo(sx(k),h-pad);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(pad,sy(k));ctx.lineTo(w-pad,sy(k));ctx.stroke();
+    }
+    ctx.strokeStyle='#94a3b8';ctx.lineWidth=1.3;
+    ctx.beginPath();ctx.moveTo(pad,sy(0));ctx.lineTo(w-pad,sy(0));ctx.stroke();
+    ctx.beginPath();ctx.moveTo(sx(0),pad);ctx.lineTo(sx(0),h-pad);ctx.stroke();
+
+    if (els.showPCA.checked) {
+      const L=maxAbs*0.95;
+      ctx.setLineDash([7,5]);
+      ctx.strokeStyle='#059669';ctx.lineWidth=2.2;
+      ctx.beginPath();ctx.moveTo(sx(-L*eig.v1[0]),sy(-L*eig.v1[1]));ctx.lineTo(sx(L*eig.v1[0]),sy(L*eig.v1[1]));ctx.stroke();
+      ctx.strokeStyle='#7c3aed';
+      ctx.beginPath();ctx.moveTo(sx(-L*eig.v2[0]),sy(-L*eig.v2[1]));ctx.lineTo(sx(L*eig.v2[0]),sy(L*eig.v2[1]));ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle='#059669';ctx.fillText('PC1',sx(L*eig.v1[0])+5,sy(L*eig.v1[1])-5);
+      ctx.fillStyle='#7c3aed';ctx.fillText('PC2',sx(L*eig.v2[0])+5,sy(L*eig.v2[1])-5);
+    }
+
+    const L=maxAbs*0.98;
+    ctx.strokeStyle='#f59e0b';ctx.lineWidth=2.7;
+    ctx.beginPath();ctx.moveTo(sx(-L*v[0]),sy(-L*v[1]));ctx.lineTo(sx(L*v[0]),sy(L*v[1]));ctx.stroke();
+    drawArrow(ctx,sx(0),sy(0),sx(1.15*v[0]),sy(1.15*v[1]),'#f59e0b',3);
+    ctx.fillStyle='#b45309';ctx.font='13px sans-serif';ctx.fillText('v',sx(1.15*v[0])+5,sy(1.15*v[1])-5);
+
+    if (els.showRecon.checked) {
+      ctx.fillStyle='rgba(5,150,105,.20)';
+      for (const p of data) {
+        const z=p[0]*eig.v1[0]+p[1]*eig.v1[1];
+        const q=[z*eig.v1[0],z*eig.v1[1]];
+        ctx.beginPath();ctx.arc(sx(q[0]),sy(q[1]),5,0,Math.PI*2);ctx.fill();
+      }
+    }
+
+    if (els.showProj.checked) {
+      for (let i=0;i<data.length;i++){
+        const p=data[i], q=projections[i];
+        ctx.strokeStyle=i===selectedIndex?'rgba(220,38,38,.65)':'rgba(245,158,11,.28)';
+        ctx.lineWidth=i===selectedIndex?2.2:1;
+        ctx.beginPath();ctx.moveTo(sx(p[0]),sy(p[1]));ctx.lineTo(sx(q[0]),sy(q[1]));ctx.stroke();
+        ctx.fillStyle=i===selectedIndex?'#dc2626':'#f59e0b';
+        ctx.beginPath();ctx.arc(sx(q[0]),sy(q[1]),i===selectedIndex?5:3,0,Math.PI*2);ctx.fill();
+      }
+    }
+
+    for (let i=0;i<data.length;i++){
+      const p=data[i];
+      const px=sx(p[0]), py=sy(p[1]);
+      dataHitAreas.push({x:px,y:py,index:i});
+      ctx.fillStyle=i===selectedIndex?'#dc2626':'#2563eb';
+      ctx.beginPath();ctx.arc(px,py,i===selectedIndex?6:4,0,Math.PI*2);ctx.fill();
+      if(i===selectedIndex){
+        ctx.fillStyle='#991b1b';ctx.font='12px sans-serif';
+        ctx.fillText(`x̃${i+1}`,px+8,py-8);
+      }
+    }
+  }
+
+  function drawScores(scores, selectedIndex) {
+    const {ctx,w,h}=setupCanvas(els.scoreCanvas);
+    ctx.clearRect(0,0,w,h);
+    scoreHitAreas = [];
+    const pad=38;
+    let maxAbs=Math.max(1,...scores.map(Math.abs))*1.15;
+    const sx=z=>pad+(z+maxAbs)/(2*maxAbs)*(w-2*pad);
+    const y0=h/2;
+
+    ctx.strokeStyle='#94a3b8';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(pad,y0);ctx.lineTo(w-pad,y0);ctx.stroke();
+
+    for(let k=-4;k<=4;k++){
+      const z=k*maxAbs/4;
+      const x=sx(z);
+      ctx.strokeStyle='#e2e8f0';
+      ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();
+      ctx.fillStyle='#64748b';ctx.font='11px sans-serif';
+      ctx.fillText(fmt(z,1),x-12,h-pad+18);
+    }
+
+    const sorted=scores.map((z,i)=>({z,i})).sort((a,b)=>a.z-b.z);
+    const buckets=[];
+    for(const item of sorted){
+      let level=0;
+      while(buckets[level] && Math.abs(buckets[level]-item.z)<maxAbs*0.07) level++;
+      buckets[level]=item.z;
+      const y=y0-18-level*15;
+      const px=sx(item.z);
+      scoreHitAreas.push({x:px,y:y,index:item.i});
+      ctx.fillStyle=item.i===selectedIndex?'#dc2626':'#2563eb';
+      ctx.beginPath();ctx.arc(px,y, item.i===selectedIndex?6:4,0,Math.PI*2);ctx.fill();
+      if(item.i===selectedIndex){
+        ctx.fillStyle='#991b1b';ctx.font='12px sans-serif';
+        ctx.fillText(`z${item.i+1}=${fmt(item.z,2)}`,px+7,y-6);
+      }
+      ctx.strokeStyle='rgba(37,99,235,.18)';
+      ctx.beginPath();ctx.moveTo(px,y+5);ctx.lineTo(px,y0);ctx.stroke();
+    }
+
+    ctx.fillStyle='#334155';ctx.font='13px sans-serif';
+    ctx.fillText('scores negativos',pad,25);
+    ctx.fillText('scores positivos',w-pad-105,25);
+  }
+
+  function updateTable(data, scores, projections) {
+    const rows=Math.min(10,data.length);
+    let html='';
+    for(let i=0;i<rows;i++){
+      html += `<tr>
+        <td>${i+1}</td>
+        <td>${fmt(data[i][0])}</td>
+        <td>${fmt(data[i][1])}</td>
+        <td>${fmt(scores[i])}</td>
+        <td>${fmt(projections[i][0])}</td>
+        <td>${fmt(projections[i][1])}</td>
+      </tr>`;
+    }
+    els.scoreTable.innerHTML=html;
+  }
+
+  function update() {
+    if (!rawData.length) return;
+
+    els.nVal.textContent=els.n.value;
+    els.noiseVal.textContent=Number(els.noise.value).toFixed(2);
+    els.angleVal.textContent=`${els.angle.value}°`;
+
+    const {data}=centeredData();
+    selectedIndex = Math.min(data.length - 1, Math.max(0, selectedIndex));
+    els.selectedVal.textContent=String(selectedIndex + 1);
+    const S=covariance(data);
+    const eig=eig2(S);
+
+    const angle=Number(els.angle.value)*Math.PI/180;
+    const v=[Math.cos(angle),Math.sin(angle)];
+    const scores=data.map(p=>p[0]*v[0]+p[1]*v[1]);
+    const projections=scores.map(z=>[z*v[0],z*v[1]]);
+    const meanScore=scores.reduce((a,b)=>a+b,0)/scores.length;
+    const varScore=scores.reduce((a,z)=>a+(z-meanScore)**2,0)/Math.max(1,scores.length-1);
+    const explained=(eig.l1+eig.l2)>0?eig.l1/(eig.l1+eig.l2):0;
+
+    let reconError=0;
+    for(const p of data){
+      const z=p[0]*eig.v1[0]+p[1]*eig.v1[1];
+      const q=[z*eig.v1[0],z*eig.v1[1]];
+      reconError+=(p[0]-q[0])**2+(p[1]-q[1])**2;
+    }
+    reconError=Math.sqrt(reconError);
+
+    els.meanScore.textContent=fmt(meanScore,4);
+    els.varScore.textContent=fmt(varScore,4);
+    els.lambda1.textContent=fmt(eig.l1,4);
+    els.explained.textContent=`${fmt(100*explained,1)}%`;
+    els.vVector.textContent=`(${fmt(v[0],2)}, ${fmt(v[1],2)})`;
+    els.pc1Vector.textContent=`(${fmt(eig.v1[0],2)}, ${fmt(eig.v1[1],2)})`;
+    els.selectedScore.textContent=fmt(scores[selectedIndex],4);
+    els.reconError.textContent=fmt(reconError,4);
+
+    drawData(data,v,eig,scores,projections,selectedIndex);
+    drawScores(scores,selectedIndex);
+    updateTable(data,scores,projections);
+  }
+
+  function selectNearestPoint(event, canvas, hitAreas) {
+    const rect=canvas.getBoundingClientRect();
+    const x=event.clientX-rect.left;
+    const y=event.clientY-rect.top;
+    let best=null;
+    let bestDist=Infinity;
+
+    for(const hit of hitAreas){
+      const dist=Math.hypot(x-hit.x,y-hit.y);
+      if(dist<bestDist){
+        bestDist=dist;
+        best=hit;
+      }
+    }
+
+    if(best && bestDist<=14){
+      selectedIndex=best.index;
+      update();
+    }
+  }
+
+  els.dataCanvas.addEventListener('click',event=>{
+    selectNearestPoint(event,els.dataCanvas,dataHitAreas);
+  });
+
+  els.scoreCanvas.addEventListener('click',event=>{
+    selectNearestPoint(event,els.scoreCanvas,scoreHitAreas);
+  });
+
+  els.regen.addEventListener('click',generateData);
+  els.usePC1.addEventListener('click',()=>{
+    const {data}=centeredData();
+    const eig=eig2(covariance(data));
+    let ang=Math.atan2(eig.v1[1],eig.v1[0])*180/Math.PI;
+    if(ang<0) ang+=180;
+    els.angle.value=Math.round(ang);
+    update();
+  });
+
+  ['n','noise','dataset'].forEach(id=>els[id].addEventListener('change',generateData));
+  ['angle','center','showProj','showPCA','showRecon'].forEach(id=>els[id].addEventListener('input',update));
+  window.addEventListener('resize',update);
+
+  generateData();
+})();
+</script>
+</body>
+</html>
