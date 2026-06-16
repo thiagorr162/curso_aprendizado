@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K-Means · Algoritmo</title>
+<style>
+:root{
+  --bg:#0f1117; --panel:#171a23; --panel2:#1f2330; --line:#2a2f3d;
+  --fg:#e8eaf0; --muted:#9aa3b5; --accent:#5b8cff; --accent2:#ff8a5b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg); color:var(--fg);
+  font:15px/1.5 system-ui,sans-serif;
+  display:flex; flex-direction:column;
+}
+header{padding:14px 20px; border-bottom:1px solid var(--line); flex-shrink:0}
+header h1{margin:0; font-size:18px; font-weight:650}
+header p{margin:4px 0 0; color:var(--muted); font-size:13px}
+
+.wrap{flex:1; display:flex; min-height:0}
+.side{
+  width:270px; flex-shrink:0; padding:16px; border-right:1px solid var(--line);
+  display:flex; flex-direction:column; gap:16px; overflow-y:auto;
+}
+.main{flex:1; display:flex; flex-direction:row; gap:12px; padding:14px; min-width:0; min-height:0}
+
+.group h2{
+  margin:0 0 8px; font-size:11px; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); font-weight:600;
+}
+.btns{display:flex; flex-wrap:wrap; gap:6px}
+button.opt{
+  background:var(--panel2); color:var(--fg); border:1px solid var(--line);
+  padding:6px 11px; border-radius:7px; cursor:pointer; font-size:13px; transition:.12s;
+}
+button.opt:hover{border-color:var(--accent)}
+button.opt.active{background:var(--accent); border-color:var(--accent); color:#fff}
+button.opt.danger{border-color:#e15759; color:#e15759}
+button.opt.danger:hover{background:#e15759; color:#fff}
+button.opt:disabled{opacity:.35; cursor:not-allowed; pointer-events:none}
+button.opt.big{width:100%; justify-content:center; padding:9px; font-size:14px}
+
+.field{display:flex; flex-direction:column; gap:3px}
+.field label{font-size:12px; color:var(--muted)}
+.field input[type=number]{
+  background:var(--panel2); border:1px solid var(--line); color:var(--fg);
+  padding:5px 8px; border-radius:6px; font-size:13px; width:100%; outline:none;
+}
+
+.meta .row{display:flex; justify-content:space-between; padding:2px 0; font-size:13px}
+.meta .row span{color:var(--muted)}
+.meta .row b{color:var(--fg); font-weight:600}
+.tag{
+  display:inline-block; padding:1px 8px; border-radius:12px;
+  font-size:11px; border:1px solid;
+}
+.tag.assign{color:#5b8cff; border-color:#5b8cff}
+.tag.update{color:#ff8a5b; border-color:#ff8a5b}
+.tag.conv{color:#5bd6a0; border-color:#5bd6a0}
+
+/* canvas scatter — quadrado baseado na altura disponível */
+.cv-wrap{
+  flex-shrink:0;
+  height:100%; aspect-ratio:1; max-width:calc(100% - 260px);
+  position:relative;
+  background:#0a0c10; border:1px solid var(--line); border-radius:8px; overflow:hidden;
+}
+canvas#scatter{display:block; width:100%; height:100%; cursor:crosshair}
+.cv-hint{
+  position:absolute; bottom:10px; right:12px;
+  font-size:11.5px; color:var(--muted); pointer-events:none;
+}
+
+/* elbow — coluna direita, cresce para ocupar o espaço restante */
+.elbow-wrap{
+  flex:1; min-width:220px; position:relative;
+  display:flex; flex-direction:column;
+}
+.elbow-placeholder{
+  flex:1;
+  display:flex; align-items:center; justify-content:center; text-align:center;
+  background:#0a0c10; border:1px solid var(--line); border-radius:8px;
+  color:var(--muted); font-size:13px; padding:12px;
+}
+canvas#elbow{flex:1; border-radius:8px; background:#0a0c10; border:1px solid var(--line)}
+
+/* legend */
+.legend{display:flex; flex-wrap:wrap; gap:5px}
+.lchip{display:flex; align-items:center; gap:5px; font-size:12px}
+.ldot{width:10px; height:10px; border-radius:50%}
+</style>
+</head>
+<body>
+<header>
+  <h1>K-Means — Visualização do Algoritmo</h1>
+  <p>Clique no canvas para adicionar pontos ou gere um dataset. Use "Passo" para ver cada sub-etapa (atribuição → atualização).</p>
+</header>
+
+<div class="wrap">
+  <aside class="side">
+
+    <div class="group">
+      <h2>K (número de clusters)</h2>
+      <div class="btns" id="kBtns"></div>
+    </div>
+
+    <div class="group">
+      <h2>Dataset aleatório</h2>
+      <div style="display:flex; gap:8px">
+        <div class="field" style="flex:1">
+          <label>Pontos</label>
+          <input type="number" id="nPoints" value="120" min="10" max="500">
+        </div>
+        <div class="field" style="flex:1">
+          <label>Blobs</label>
+          <input type="number" id="nBlobs" value="4" min="1" max="8">
+        </div>
+      </div>
+      <div class="field" style="margin-top:8px">
+        <label>Variância dos blobs — <b id="spreadVal">0.06</b></label>
+        <input type="range" id="spreadSlider" min="1" max="20" value="6"
+               style="-webkit-appearance:none;width:100%;height:6px;border-radius:3px;
+                      background:var(--panel2);outline:none;cursor:pointer">
+      </div>
+      <div class="btns" style="margin-top:8px">
+        <button class="opt" id="btnGen">Gerar pontos</button>
+        <button class="opt danger" id="btnClear">Limpar</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Inicialização</h2>
+      <div class="btns" id="initBtns">
+        <button class="opt active" data-init="kmeanspp">k-means++</button>
+        <button class="opt" data-init="random">Aleatória</button>
+        <button class="opt" data-init="manual">Manual</button>
+      </div>
+      <div class="desc" id="initDesc" style="font-size:12px;color:var(--muted);margin-top:6px">
+        Seleciona centróides com probabilidade proporcional à distância — minimiza má inicialização.
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Controle do algoritmo</h2>
+      <div style="display:flex; flex-direction:column; gap:6px">
+        <button class="opt big" id="btnInit" disabled>Inicializar centróides</button>
+        <div style="display:flex; gap:6px">
+          <button class="opt big" id="btnStep" disabled style="flex:1">Passo</button>
+          <button class="opt big" id="btnRun"  disabled style="flex:1">Rodar</button>
+        </div>
+        <button class="opt big" id="btnReset" disabled>Reiniciar centróides</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Curva do cotovelo</h2>
+      <button class="opt big" id="btnElbow" disabled>Calcular (K = 1 … 10)</button>
+    </div>
+
+    <div class="group">
+      <h2>Estado</h2>
+      <div class="meta" id="statusMeta">
+        <div class="row"><span>Pontos</span><b id="stN">0</b></div>
+        <div class="row"><span>Fase</span><b id="stPhase">—</b></div>
+        <div class="row"><span>Iteração</span><b id="stIter">—</b></div>
+        <div class="row"><span>Inércia</span><b id="stInertia">—</b></div>
+      </div>
+    </div>
+
+    <div class="group" style="margin-top:auto">
+      <h2>Legenda clusters</h2>
+      <div class="legend" id="legend"></div>
+    </div>
+
+  </aside>
+
+  <main class="main">
+    <div class="cv-wrap">
+      <canvas id="scatter"></canvas>
+      <div class="cv-hint">clique para adicionar pontos</div>
+    </div>
+    <div class="elbow-wrap">
+      <div class="elbow-placeholder" id="elbowPH">← clique em "Calcular" para ver a curva do cotovelo</div>
+      <canvas id="elbow"></canvas>
+    </div>
+  </main>
+</div>
+
+<script>
+"use strict";
+
+const COLORS = ["#5b8cff","#ff8a5b","#59a14f","#e15759","#edc948",
+                "#b07aa1","#76b7b2","#ff9da7"];
+
+// ── estado ──────────────────────────────────────────────
+let points      = [];   // [{x,y}] normalizados [0,1]
+let K           = 3;
+let centroids   = [];   // [{x,y}]
+let assignments = [];   // int[] índice do cluster de cada ponto
+let nextIsAssign = true; // true=próximo passo é atribuição, false=atualização
+let iteration   = 0;
+let converged   = false;
+let autoId      = null;
+
+// ── canvas scatter ───────────────────────────────────────
+const cv  = document.getElementById("scatter");
+const ctx = cv.getContext("2d");
+let W = 0, H = 0;
+const PAD = 28;
+
+function resize() {
+  const r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  W = r.width; H = r.height;
+  cv.width = W*dpr; cv.height = H*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+window.addEventListener("resize", resize);
+
+function toScreen(p) {
+  return [PAD + p.x*(W-2*PAD), PAD + p.y*(H-2*PAD)];
+}
+function fromScreen(x, y) {
+  return { x:(x-PAD)/(W-2*PAD), y:(y-PAD)/(H-2*PAD) };
+}
+
+// ── renderização ─────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0,0,W,H);
+
+  // grade sutil
+  ctx.strokeStyle="#1a1f2e"; ctx.lineWidth=1;
+  for (let i=0; i<=4; i++) {
+    const x = PAD+(i/4)*(W-2*PAD), y = PAD+(i/4)*(H-2*PAD);
+    ctx.beginPath(); ctx.moveTo(x,PAD); ctx.lineTo(x,H-PAD); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(PAD,y); ctx.lineTo(W-PAD,y); ctx.stroke();
+  }
+
+  // regiões de Voronoi
+  if (centroids.length > 0) {
+    const step = 8;
+    for (let y=PAD; y<H-PAD; y+=step)
+      for (let x=PAD; x<W-PAD; x+=step) {
+        const p = fromScreen(x,y);
+        let md=Infinity, mk=0;
+        centroids.forEach((c,k)=>{ const d=(p.x-c.x)**2+(p.y-c.y)**2; if(d<md){md=d;mk=k;} });
+        ctx.fillStyle=COLORS[mk]+"28";
+        ctx.fillRect(x,y,step,step);
+      }
+    // bordas de Voronoi
+    for (let y=PAD; y<H-PAD; y+=step)
+      for (let x=PAD; x<W-PAD; x+=step) {
+        const p = fromScreen(x,y);
+        let md=Infinity, mk=0, md2=Infinity;
+        centroids.forEach((c,k)=>{ const d=(p.x-c.x)**2+(p.y-c.y)**2; if(d<md){md2=md;md=d;mk=k;} else if(d<md2) md2=d; });
+        if (md2-md < 0.0008) { ctx.fillStyle="#ffffff10"; ctx.fillRect(x,y,step,step); }
+      }
+  }
+
+  // pontos
+  points.forEach((p,i) => {
+    const [x,y]=toScreen(p);
+    const k=assignments[i];
+    ctx.beginPath(); ctx.arc(x,y,5,0,2*Math.PI);
+    ctx.fillStyle = k!=null && k>=0 ? COLORS[k] : "#6a7390";
+    ctx.globalAlpha=0.88; ctx.fill(); ctx.globalAlpha=1;
+    if (k!=null && k>=0) {
+      ctx.strokeStyle=COLORS[k]+"99"; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(x,y,5,0,2*Math.PI); ctx.stroke();
+    }
+  });
+
+  // centróides
+  centroids.forEach((c,k) => {
+    const [x,y]=toScreen(c);
+    // diamante
+    ctx.save(); ctx.translate(x,y); ctx.rotate(Math.PI/4);
+    ctx.beginPath(); ctx.rect(-9,-9,18,18);
+    ctx.fillStyle=COLORS[k]; ctx.strokeStyle="#fff"; ctx.lineWidth=2;
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+    // número
+    ctx.fillStyle="#fff"; ctx.font="bold 11px system-ui";
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(k+1, x, y);
+  });
+}
+
+// ── distância ────────────────────────────────────────────
+function d2(a,b){ return (a.x-b.x)**2+(a.y-b.y)**2; }
+
+// ── método de inicialização ──────────────────────────────
+let initMethod = "kmeanspp";
+let manualMode = false; // true = clique coloca centróide em vez de ponto
+
+const INIT_DESC = {
+  kmeanspp: "Seleciona centróides com probabilidade proporcional à distância — minimiza má inicialização.",
+  random:   "Escolhe K pontos do dataset ao acaso. Pode convergir para soluções ruins dependendo do sorteio.",
+  manual:   "Clique no canvas para posicionar cada centróide. Útil para testar más inicializações.",
+};
+
+document.getElementById("initBtns").addEventListener("click", e=>{
+  const b = e.target.closest("[data-init]");
+  if (!b) return;
+  initMethod = b.dataset.init;
+  [...document.getElementById("initBtns").children].forEach(x=>x.classList.remove("active"));
+  b.classList.add("active");
+  document.getElementById("initDesc").textContent = INIT_DESC[initMethod];
+  manualMode = false;
+  syncButtons();
+  // dica no canvas
+  document.querySelector(".cv-hint").textContent =
+    initMethod==="manual" ? "clique para adicionar centróides" : "clique para adicionar pontos";
+});
+
+function initCentroids() {
+  if (points.length < K) return;
+  if (initMethod === "manual") {
+    centroids=[]; assignments=new Array(points.length).fill(-1);
+    nextIsAssign=true; iteration=0; converged=false;
+    manualMode=true;
+    document.querySelector(".cv-hint").textContent=`clique para colocar centróide (${centroids.length}/${K})`;
+    syncButtons(); updateStatus(); draw();
+    return;
+  }
+  centroids=[];
+  if (initMethod === "kmeanspp") {
+    centroids.push({...points[Math.floor(Math.random()*points.length)]});
+    while (centroids.length < K) {
+      const dists = points.map(p=>Math.min(...centroids.map(c=>d2(p,c))));
+      const tot   = dists.reduce((a,b)=>a+b,0);
+      let r = Math.random()*tot, chosen = points[points.length-1];
+      for (let i=0;i<points.length;i++){ r-=dists[i]; if(r<=0){chosen=points[i];break;} }
+      centroids.push({...chosen});
+    }
+  } else { // random
+    const idx = [...Array(points.length).keys()].sort(()=>Math.random()-.5).slice(0,K);
+    centroids = idx.map(i=>({...points[i]}));
+  }
+  assignments = new Array(points.length).fill(-1);
+  nextIsAssign=true; iteration=0; converged=false;
+  syncButtons(); updateStatus(); draw();
+}
+
+// ── sub-passos ───────────────────────────────────────────
+function stepAssign() {
+  const prev=assignments.slice();
+  assignments=points.map(p=>{ let md=Infinity,mk=0; centroids.forEach((c,k)=>{const d=d2(p,c);if(d<md){md=d;mk=k;}}); return mk; });
+  return !prev.every((v,i)=>v===assignments[i]);
+}
+
+function stepUpdate() {
+  const sums=Array.from({length:K},()=>({x:0,y:0,n:0}));
+  points.forEach((p,i)=>{ sums[assignments[i]].x+=p.x; sums[assignments[i]].y+=p.y; sums[assignments[i]].n++; });
+  centroids=sums.map((s,k)=>s.n>0?{x:s.x/s.n,y:s.y/s.n}:centroids[k]);
+}
+
+function inertia() {
+  if (!assignments.length||!centroids.length) return 0;
+  return points.reduce((acc,p,i)=>acc+(assignments[i]>=0?d2(p,centroids[assignments[i]]):0),0);
+}
+
+function doStep() {
+  if (converged||!centroids.length) return;
+  if (nextIsAssign) {
+    const changed=stepAssign();
+    nextIsAssign=false;
+    if (!changed && iteration>0) { converged=true; stopAuto(); }
+    else if (!changed) { stepUpdate(); nextIsAssign=true; iteration++; converged=true; stopAuto(); }
+  } else {
+    stepUpdate();
+    nextIsAssign=true;
+    iteration++;
+  }
+  syncButtons(); updateStatus(); draw();
+}
+
+// ── auto run ─────────────────────────────────────────────
+function startAuto() {
+  if (!centroids.length) initCentroids();
+  document.getElementById("btnRun").textContent="Pausar";
+  autoId=setInterval(()=>{ doStep(); if(converged) stopAuto(); }, 480);
+}
+function stopAuto() {
+  clearInterval(autoId); autoId=null;
+  document.getElementById("btnRun").textContent="Rodar";
+}
+
+// ── gerar pontos ─────────────────────────────────────────
+function generatePoints() {
+  stopAuto();
+  const n      = Math.max(10, parseInt(document.getElementById("nPoints").value)||120);
+  const nc     = Math.max(1,  parseInt(document.getElementById("nBlobs").value)||4);
+  const spread = parseInt(document.getElementById("spreadSlider").value) / 100;
+  // distância mínima entre centros = 3× o spread, para blobs não se sobreposicionarem
+  const minDist2 = (spread * 3) ** 2;
+  const centers=[];
+  let tries=0;
+  while (centers.length<nc && tries<2000) {
+    tries++;
+    const c={x:0.12+Math.random()*0.76, y:0.12+Math.random()*0.76};
+    if (centers.every(o=>(c.x-o.x)**2+(c.y-o.y)**2>minDist2)) centers.push(c);
+  }
+  // se não conseguiu separar todos, usa o que tiver
+  if (!centers.length) centers.push({x:0.5,y:0.5});
+
+  // distribuição gaussiana via Box-Muller
+  function gauss(mean, std) {
+    let u=0,v=0;
+    while(u===0) u=Math.random();
+    while(v===0) v=Math.random();
+    return mean + std * Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v);
+  }
+
+  points=[];
+  for (let i=0;i<n;i++) {
+    const c=centers[i%centers.length];
+    let p, attempts=0;
+    do {
+      p={x:gauss(c.x,spread), y:gauss(c.y,spread)};
+      attempts++;
+    } while ((p.x<0.01||p.x>0.99||p.y<0.01||p.y>0.99) && attempts<30);
+    points.push({x:Math.max(0.01,Math.min(0.99,p.x)), y:Math.max(0.01,Math.min(0.99,p.y))});
+  }
+  centroids=[]; assignments=[]; iteration=0; converged=false; nextIsAssign=true;
+  syncButtons(); updateStatus(); draw();
+}
+
+function clearAll() {
+  stopAuto();
+  points=[]; centroids=[]; assignments=[]; iteration=0; converged=false; nextIsAssign=true;
+  elbowPH.style.display="flex";
+  elbowCtx.clearRect(0,0,elbowEl.width,elbowEl.height);
+  syncButtons(); updateStatus(); draw();
+}
+
+// ── botões: estado ───────────────────────────────────────
+function syncButtons() {
+  const hasPoints  = points.length >= K;
+  const hasCents   = centroids.length === K && !manualMode;
+  document.getElementById("btnInit").disabled  = !hasPoints || manualMode;
+  document.getElementById("btnStep").disabled  = !hasCents || converged;
+  document.getElementById("btnRun").disabled   = !hasPoints || converged || manualMode;
+  document.getElementById("btnReset").disabled = !centroids.length || manualMode;
+  document.getElementById("btnElbow").disabled = points.length < 2;
+}
+
+// ── status ───────────────────────────────────────────────
+function updateStatus() {
+  document.getElementById("stN").textContent = points.length;
+  let phaseStr="—";
+  if (!centroids.length && points.length>0) phaseStr="Pronto (sem centróides)";
+  else if (converged) phaseStr=`<span class="tag conv">Convergiu ✓</span>`;
+  else if (centroids.length>0 && nextIsAssign) phaseStr=`<span class="tag assign">→ Atribuição</span>`;
+  else if (centroids.length>0 && !nextIsAssign) phaseStr=`<span class="tag update">→ Atualização</span>`;
+  document.getElementById("stPhase").innerHTML   = phaseStr;
+  document.getElementById("stIter").textContent  = centroids.length ? iteration : "—";
+  document.getElementById("stInertia").textContent = centroids.length && assignments.length ? inertia().toFixed(4) : "—";
+}
+
+// ── cotovelo ─────────────────────────────────────────────
+function runKMeansOnce(pts, k, maxIter) {
+  let cens=[];
+  cens.push({...pts[Math.floor(Math.random()*pts.length)]});
+  while (cens.length<k) {
+    const dists=pts.map(p=>Math.min(...cens.map(c=>d2(p,c))));
+    const tot=dists.reduce((a,b)=>a+b,0);
+    let r=Math.random()*tot, chosen=pts[pts.length-1];
+    for (let i=0;i<pts.length;i++){r-=dists[i];if(r<=0){chosen=pts[i];break;}}
+    cens.push({...chosen});
+  }
+  let asgn=new Array(pts.length).fill(0);
+  for (let it=0;it<maxIter;it++){
+    const prev=asgn.slice();
+    asgn=pts.map(p=>{let md=Infinity,mk=0;cens.forEach((c,ki)=>{const d=d2(p,c);if(d<md){md=d;mk=ki;}});return mk;});
+    if (prev.every((v,i)=>v===asgn[i])) break;
+    const sums=Array.from({length:k},()=>({x:0,y:0,n:0}));
+    pts.forEach((p,i)=>{sums[asgn[i]].x+=p.x;sums[asgn[i]].y+=p.y;sums[asgn[i]].n++;});
+    cens=sums.map((s,ki)=>s.n>0?{x:s.x/s.n,y:s.y/s.n}:cens[ki]);
+  }
+  return pts.reduce((acc,p,i)=>acc+d2(p,cens[asgn[i]??0]),0);
+}
+
+function computeElbow() {
+  const maxK=Math.min(10,points.length-1);
+  const inertias=[];
+  for (let k=1;k<=maxK;k++){
+    let best=Infinity;
+    for (let t=0;t<6;t++){const v=runKMeansOnce(points,k,150);if(v<best)best=v;}
+    inertias.push(best);
+  }
+  drawElbow(inertias, maxK);
+}
+
+const elbowEl  = document.getElementById("elbow");
+const elbowCtx = elbowEl.getContext("2d");
+const elbowPH  = document.getElementById("elbowPH");
+
+function drawElbow(inertias, maxK) {
+  elbowPH.style.display="none";
+  const dpr=devicePixelRatio||1;
+  // Canvas já está no DOM com flex:1 — getBoundingClientRect() dá dimensões corretas
+  const r=elbowEl.getBoundingClientRect();
+  const EW=r.width||elbowEl.parentElement.clientWidth;
+  const EH=r.height||elbowEl.parentElement.clientHeight;
+  elbowEl.width=EW*dpr; elbowEl.height=EH*dpr;
+  elbowCtx.setTransform(dpr,0,0,dpr,0,0);
+  const pad={l:50,r:16,t:14,b:32};
+  const iW=EW-pad.l-pad.r, iH=EH-pad.t-pad.b;
+
+  elbowCtx.clearRect(0,0,EW,EH);
+
+  // Y parte de zero para mostrar a magnitude real da melhora por K
+  const mx=inertias[0];
+  const sx=i=>pad.l+(i/Math.max(maxK-1,1))*iW;
+  const sy=v=>pad.t+iH-(v/mx)*iH;
+
+  // grade
+  elbowCtx.strokeStyle="#1a1f2e"; elbowCtx.lineWidth=1;
+  [0,.25,.5,.75,1].forEach(t=>{
+    const y=pad.t+t*iH;
+    elbowCtx.beginPath();elbowCtx.moveTo(pad.l,y);elbowCtx.lineTo(pad.l+iW,y);elbowCtx.stroke();
+  });
+
+  // linha
+  elbowCtx.strokeStyle="#5b8cff"; elbowCtx.lineWidth=2;
+  elbowCtx.beginPath();
+  inertias.forEach((v,i)=>i===0?elbowCtx.moveTo(sx(i),sy(v)):elbowCtx.lineTo(sx(i),sy(v)));
+  elbowCtx.stroke();
+
+  // pontos e labels K
+  inertias.forEach((v,i)=>{
+    const x=sx(i),y=sy(v),isK=(i+1===K);
+    elbowCtx.beginPath();elbowCtx.arc(x,y,isK?7:4,0,2*Math.PI);
+    elbowCtx.fillStyle=isK?"#ff8a5b":"#5b8cff"; elbowCtx.fill();
+    if(isK){ elbowCtx.strokeStyle="#fff";elbowCtx.lineWidth=1.5;elbowCtx.stroke(); }
+    elbowCtx.fillStyle="#9aa3b5"; elbowCtx.font="11px system-ui";
+    elbowCtx.textAlign="center"; elbowCtx.textBaseline="top";
+    elbowCtx.fillText(i+1,x,pad.t+iH+6);
+  });
+
+  // eixos
+  elbowCtx.fillStyle="#9aa3b5"; elbowCtx.font="11px system-ui";
+  elbowCtx.textAlign="center"; elbowCtx.textBaseline="top";
+  elbowCtx.fillText("K",pad.l+iW/2,pad.t+iH+20);
+  elbowCtx.save();
+  elbowCtx.translate(13,pad.t+iH/2); elbowCtx.rotate(-Math.PI/2);
+  elbowCtx.textBaseline="middle"; elbowCtx.fillText("inércia",0,0);
+  elbowCtx.restore();
+  elbowCtx.textAlign="right"; elbowCtx.textBaseline="middle";
+  elbowCtx.fillText(mx.toFixed(2),pad.l-4,pad.t+4);
+  elbowCtx.fillText("0",pad.l-4,pad.t+iH);
+}
+
+window.addEventListener("resize", resize);
+
+// ── UI: botões K ─────────────────────────────────────────
+const kBtns=document.getElementById("kBtns");
+[2,3,4,5,6,7,8].forEach(k=>{
+  const b=document.createElement("button");
+  b.className="opt"+(k===K?" active":""); b.textContent=k;
+  b.onclick=()=>{
+    K=k;
+    [...kBtns.children].forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    syncButtons();
+  };
+  kBtns.appendChild(b);
+});
+
+// legenda
+const legendEl=document.getElementById("legend");
+COLORS.forEach((c,i)=>{
+  const d=document.createElement("div"); d.className="lchip";
+  d.innerHTML=`<span class="ldot" style="background:${c}"></span>${i+1}`;
+  legendEl.appendChild(d);
+});
+
+// ── eventos dos botões ───────────────────────────────────
+document.getElementById("btnGen").onclick=generatePoints;
+document.getElementById("btnClear").onclick=clearAll;
+document.getElementById("spreadSlider").addEventListener("input", e=>{
+  document.getElementById("spreadVal").textContent=(parseInt(e.target.value)/100).toFixed(2);
+});
+document.getElementById("btnInit").onclick=initCentroids;
+document.getElementById("btnStep").onclick=doStep;
+document.getElementById("btnReset").onclick=initCentroids;
+document.getElementById("btnElbow").onclick=computeElbow;
+document.getElementById("btnRun").onclick=()=>{
+  if (autoId) stopAuto();
+  else {
+    if (converged) { initCentroids(); }
+    startAuto();
+  }
+};
+
+// ── canvas: clique ───────────────────────────────────────
+cv.addEventListener("click",e=>{
+  const r=cv.getBoundingClientRect();
+  const p=fromScreen(e.clientX-r.left, e.clientY-r.top);
+  if(p.x<0||p.x>1||p.y<0||p.y>1) return;
+
+  if (manualMode) {
+    if (centroids.length >= K) return;
+    centroids.push(p);
+    const hint = document.querySelector(".cv-hint");
+    if (centroids.length < K) {
+      hint.textContent=`clique para colocar centróide (${centroids.length}/${K})`;
+    } else {
+      manualMode=false;
+      hint.textContent="clique para adicionar pontos";
+    }
+    syncButtons(); updateStatus(); draw();
+    return;
+  }
+
+  points.push(p);
+  if (centroids.length>0) {
+    let md=Infinity,mk=0;
+    centroids.forEach((c,k)=>{const d=d2(p,c);if(d<md){md=d;mk=k;}});
+    assignments.push(mk);
+  } else {
+    assignments.push(-1);
+  }
+  syncButtons(); updateStatus(); draw();
+});
+
+// ── init ─────────────────────────────────────────────────
+syncButtons(); updateStatus(); resize();
+</script>
+</body>
+</html>

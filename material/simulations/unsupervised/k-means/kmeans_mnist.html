@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K-Means · MNIST via t-SNE</title>
+<style>
+:root{
+  --bg:#0f1117; --panel:#171a23; --panel2:#1f2330; --line:#2a2f3d;
+  --fg:#e8eaf0; --muted:#9aa3b5; --accent:#5b8cff; --accent2:#ff8a5b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg); color:var(--fg);
+  font:15px/1.5 system-ui,sans-serif;
+  display:flex; flex-direction:column;
+}
+header{padding:14px 20px; border-bottom:1px solid var(--line); flex-shrink:0}
+header h1{margin:0; font-size:18px; font-weight:650}
+header p{margin:4px 0 0; color:var(--muted); font-size:13px}
+
+.wrap{flex:1; display:flex; min-height:0}
+.side{
+  width:280px; flex-shrink:0; padding:16px; border-right:1px solid var(--line);
+  display:flex; flex-direction:column; gap:16px; overflow-y:auto;
+}
+.main{flex:1; display:flex; flex-direction:row; gap:12px; padding:14px; min-width:0; min-height:0}
+
+.group h2{
+  margin:0 0 8px; font-size:11px; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); font-weight:600;
+}
+.btns{display:flex; flex-wrap:wrap; gap:6px}
+button.opt{
+  background:var(--panel2); color:var(--fg); border:1px solid var(--line);
+  padding:6px 11px; border-radius:7px; cursor:pointer; font-size:13px; transition:.12s;
+}
+button.opt:hover{border-color:var(--accent)}
+button.opt.active{background:var(--accent); border-color:var(--accent); color:#fff}
+button.opt.big{width:100%; padding:9px; font-size:14px}
+button.opt:disabled{opacity:.35; cursor:not-allowed; pointer-events:none}
+
+.toggle-wrap{display:flex; background:var(--panel2); border-radius:8px; padding:3px; gap:3px}
+.toggle-wrap button{
+  flex:1; background:none; border:none; color:var(--muted);
+  padding:6px; border-radius:6px; cursor:pointer; font-size:13px; transition:.12s;
+}
+.toggle-wrap button.active{background:var(--accent); color:#fff}
+
+.meta .row{display:flex; justify-content:space-between; padding:2px 0; font-size:13px}
+.meta .row span{color:var(--muted)}
+.meta .row b{color:var(--fg); font-weight:600}
+
+.cv-wrap{
+  flex-shrink:0;
+  height:100%; aspect-ratio:1; max-width:calc(100% - 200px);
+  position:relative;
+  background:#0a0c10; border:1px solid var(--line); border-radius:8px; overflow:hidden;
+}
+canvas#scatter{display:block; width:100%; height:100%}
+
+/* tooltip */
+#tip{
+  position:absolute; pointer-events:none; display:none; z-index:5;
+  background:var(--panel); border:1px solid var(--line); border-radius:10px;
+  padding:8px; box-shadow:0 8px 24px rgba(0,0,0,.45);
+}
+#tip canvas{display:block; image-rendering:pixelated; border-radius:4px}
+#tip .lbl{text-align:center; margin-top:5px; font-size:12px}
+
+/* matriz de confusão — coluna direita */
+.conf-wrap{
+  flex:1; min-width:180px;
+  display:flex; flex-direction:column; gap:6px;
+}
+.conf-title{font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); font-weight:600}
+canvas#conf{flex:1; display:block; width:100%; border-radius:8px; background:#0a0c10; border:1px solid var(--line)}
+
+/* no-data */
+#nodata{
+  display:none; position:absolute; inset:0; background:rgba(15,17,23,.92);
+  align-items:center; justify-content:center; flex-direction:column;
+  gap:10px; text-align:center; padding:32px; z-index:20;
+}
+#nodata.show{display:flex}
+#nodata h2{margin:0; font-size:16px}
+#nodata p{margin:0; color:var(--muted); font-size:13px}
+#nodata code{
+  display:block; background:var(--panel2); border:1px solid var(--line);
+  padding:10px 16px; border-radius:8px; font-size:12px; color:#a3d4ff;
+  white-space:pre; text-align:left;
+}
+
+/* legenda */
+.legend{display:flex; flex-wrap:wrap; gap:5px}
+.lchip{display:flex; align-items:center; gap:5px; font-size:12px; cursor:pointer; user-select:none}
+.lchip.off{opacity:.3}
+.ldot{width:10px; height:10px; border-radius:50%; flex-shrink:0}
+</style>
+</head>
+<body>
+<header>
+  <h1>K-Means no MNIST — via t-SNE 2D</h1>
+  <p>K-Means aplicado sobre os embeddings t-SNE. Compare a coloração por cluster vs. rótulo real.</p>
+</header>
+
+<div class="wrap">
+  <aside class="side">
+
+    <div class="group">
+      <h2>t-SNE · perplexidade</h2>
+      <div class="btns" id="perpBtns"></div>
+    </div>
+
+    <div class="group">
+      <h2>K (clusters)</h2>
+      <div class="btns" id="kBtns"></div>
+    </div>
+
+    <div class="group">
+      <button class="opt big" id="btnRun" disabled>Rodar K-Means</button>
+    </div>
+
+    <div class="group">
+      <h2>Coloração</h2>
+      <div class="toggle-wrap">
+        <button id="viewCluster" class="active">Por cluster</button>
+        <button id="viewLabel">Por dígito</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Dígitos (filtrar)</h2>
+      <div class="legend" id="digitLegend"></div>
+    </div>
+
+    <div class="group">
+      <h2>Métricas</h2>
+      <div class="meta">
+        <div class="row"><span>Amostras</span><b id="mN">—</b></div>
+        <div class="row"><span>Pureza</span><b id="mPurity">—</b></div>
+        <div class="row"><span>Inércia</span><b id="mInertia">—</b></div>
+        <div class="row"><span>Iterações</span><b id="mIter">—</b></div>
+      </div>
+    </div>
+
+    <div style="margin-top:auto; font-size:11.5px; color:var(--muted)">
+      ⚠️ K-Means aqui opera em 2D (t-SNE), não em 784D.
+      A separação depende da perplexidade escolhida.
+    </div>
+
+  </aside>
+
+  <main class="main">
+    <div class="cv-wrap" style="position:relative">
+      <canvas id="scatter"></canvas>
+      <div id="tip">
+        <canvas id="tipImg" width="84" height="84"></canvas>
+        <div class="lbl" id="tipLbl"></div>
+      </div>
+      <div id="nodata">
+        <h2>Dados do MNIST não encontrados</h2>
+        <p>Gere os embeddings com os scripts da pasta <code>pca/</code>:</p>
+        <code>cd ../pca
+python generate_mnist_embeddings.py
+python embed_data.py</code>
+        <p style="margin-top:8px">Depois sirva a pasta via HTTP e abra este arquivo:</p>
+        <code>cd ..
+python -m http.server 8000
+# abrir: http://localhost:8000/k-means/kmeans_mnist.html</code>
+      </div>
+    </div>
+    <div class="conf-wrap">
+      <div class="conf-title">Cluster × Dígito</div>
+      <canvas id="conf"></canvas>
+    </div>
+  </main>
+</div>
+
+<script>
+"use strict";
+
+// Paleta por dígito (mesma da sim PCA)
+const DIGIT_COLORS = ["#4e79a7","#f28e2b","#59a14f","#e15759","#b07aa1",
+                      "#76b7b2","#edc948","#ff9da7","#9c755f","#bab0ac"];
+// Paleta por cluster (até K=10)
+const CLUSTER_COLORS = ["#5b8cff","#ff8a5b","#59a14f","#e15759","#edc948",
+                        "#b07aa1","#76b7b2","#ff9da7","#9c755f","#bab0ac"];
+
+// ── estado ───────────────────────────────────────────────
+let DATA      = null;
+let perpKeys  = [];
+let curPerp   = null;
+let K         = 10;
+let pts2D     = [];   // [{x,y}] normalizados
+let labels    = [];   // rótulos reais (0-9)
+let clusters  = [];   // atribuições k-means
+let centroids2D = [];
+let viewMode  = "cluster"; // "cluster" | "label"
+let hidden    = new Set(); // dígitos escondidos
+
+// ── canvas scatter ────────────────────────────────────────
+const cv  = document.getElementById("scatter");
+const ctx = cv.getContext("2d");
+let W=0, H=0;
+const PAD=32;
+
+function resize() {
+  const r=cv.getBoundingClientRect(), dpr=devicePixelRatio||1;
+  W=r.width; H=r.height;
+  cv.width=W*dpr; cv.height=H*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+window.addEventListener("resize",resize);
+
+function toScreen(p){
+  return [PAD+p[0]*(W-2*PAD), PAD+p[1]*(H-2*PAD)];
+}
+
+function draw() {
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle="#1a1f2e"; ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const x=PAD+(i/4)*(W-2*PAD),y=PAD+(i/4)*(H-2*PAD);
+    ctx.beginPath();ctx.moveTo(x,PAD);ctx.lineTo(x,H-PAD);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(PAD,y);ctx.lineTo(W-PAD,y);ctx.stroke();
+  }
+
+  const N=pts2D.length;
+  for(let i=0;i<N;i++){
+    const lab=labels[i];
+    if(hidden.has(lab)) continue;
+    const [x,y]=toScreen(pts2D[i]);
+    const isHover=i===hoverIdx;
+    let color;
+    if(viewMode==="cluster"&&clusters.length>0) color=CLUSTER_COLORS[clusters[i]%10];
+    else color=DIGIT_COLORS[lab];
+    ctx.beginPath();ctx.arc(x,y,isHover?7:4,0,2*Math.PI);
+    ctx.fillStyle=color; ctx.globalAlpha=isHover?1:0.82; ctx.fill();
+    if(isHover){ctx.globalAlpha=1;ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.stroke();}
+  }
+  ctx.globalAlpha=1;
+
+  // centróides dos clusters
+  if(clusters.length>0&&centroids2D.length>0){
+    centroids2D.forEach((c,k)=>{
+      const [x,y]=toScreen(c);
+      ctx.save(); ctx.translate(x,y); ctx.rotate(Math.PI/4);
+      ctx.beginPath(); ctx.rect(-8,-8,16,16);
+      ctx.fillStyle=CLUSTER_COLORS[k%10]; ctx.strokeStyle="#fff"; ctx.lineWidth=2;
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle="#fff"; ctx.font="bold 10px system-ui";
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText(k+1,x,y);
+    });
+  }
+}
+
+// ── tooltip ───────────────────────────────────────────────
+const tip    =document.getElementById("tip");
+const tipImg =document.getElementById("tipImg");
+const tipCtx =tipImg.getContext("2d");
+const tipLbl =document.getElementById("tipLbl");
+let hoverIdx =-1;
+
+cv.addEventListener("mousemove",ev=>{
+  const r=cv.getBoundingClientRect();
+  const mx=ev.clientX-r.left,my=ev.clientY-r.top;
+  let best=-1,bd=14*14;
+  for(let i=0;i<pts2D.length;i++){
+    if(hidden.has(labels[i])) continue;
+    const[x,y]=toScreen(pts2D[i]);
+    const d=(x-mx)**2+(y-my)**2;
+    if(d<bd){bd=d;best=i;}
+  }
+  if(best!==hoverIdx){hoverIdx=best;draw();}
+  if(best>=0) showTip(best,mx,my,r);
+  else tip.style.display="none";
+});
+cv.addEventListener("mouseleave",()=>{hoverIdx=-1;tip.style.display="none";draw();});
+
+function showTip(i,mx,my,r){
+  const lab=labels[i];
+  const px=DATA.pixels[i];
+  const img=tipCtx.createImageData(28,28);
+  for(let k=0;k<784;k++){
+    const v=Math.round(px[k]/15*255);
+    img.data[k*4]=v;img.data[k*4+1]=v;img.data[k*4+2]=v;img.data[k*4+3]=255;
+  }
+  const tmp=document.createElement("canvas");tmp.width=28;tmp.height=28;
+  tmp.getContext("2d").putImageData(img,0,0);
+  tipCtx.imageSmoothingEnabled=false;tipCtx.clearRect(0,0,84,84);
+  tipCtx.drawImage(tmp,0,0,84,84);
+  const clusterStr=clusters.length>0?` · cluster ${clusters[i]+1}`:"";
+  tipLbl.innerHTML=`dígito <b style="color:${DIGIT_COLORS[lab]}">${lab}</b>${clusterStr}`;
+  tip.style.display="block";
+  let left=mx+16,top=my+16;
+  if(left+115>r.width) left=mx-115;
+  if(top+125>r.height) top=my-125;
+  tip.style.left=left+"px";tip.style.top=top+"px";
+}
+
+// ── k-means ───────────────────────────────────────────────
+function d2(a,b){return(a[0]-b[0])**2+(a[1]-b[1])**2;}
+
+function runKMeans(pts, k, maxIter=200) {
+  // k-means++
+  let cens=[];
+  cens.push([...pts[Math.floor(Math.random()*pts.length)]]);
+  while(cens.length<k){
+    const dists=pts.map(p=>Math.min(...cens.map(c=>d2(p,c))));
+    const tot=dists.reduce((a,b)=>a+b,0);
+    let r=Math.random()*tot,chosen=pts[pts.length-1];
+    for(let i=0;i<pts.length;i++){r-=dists[i];if(r<=0){chosen=pts[i];break;}}
+    cens.push([...chosen]);
+  }
+  let asgn=new Array(pts.length).fill(0);
+  let iters=0;
+  for(let it=0;it<maxIter;it++){
+    iters++;
+    const prev=asgn.slice();
+    asgn=pts.map(p=>{let md=Infinity,mk=0;cens.forEach((c,ki)=>{const d=d2(p,c);if(d<md){md=d;mk=ki;}});return mk;});
+    if(prev.every((v,i)=>v===asgn[i])) break;
+    const sums=Array.from({length:k},()=>[0,0,0]);
+    pts.forEach((p,i)=>{sums[asgn[i]][0]+=p[0];sums[asgn[i]][1]+=p[1];sums[asgn[i]][2]++;});
+    cens=sums.map((s,ki)=>s[2]>0?[s[0]/s[2],s[1]/s[2]]:cens[ki]);
+  }
+  const inert=pts.reduce((acc,p,i)=>acc+d2(p,cens[asgn[i]??0]),0);
+  return {asgn,cens,inert,iters};
+}
+
+function applyKMeans(){
+  if(!pts2D.length) return;
+  // roda 3 vezes, pega a melhor
+  let best=null;
+  for(let t=0;t<3;t++){
+    const res=runKMeans(pts2D,K);
+    if(!best||res.inert<best.inert) best=res;
+  }
+  clusters=best.asgn;
+  centroids2D=best.cens;
+  document.getElementById("mInertia").textContent=best.inert.toFixed(4);
+  document.getElementById("mIter").textContent=best.iters;
+  document.getElementById("mPurity").textContent=purity().toFixed(3);
+  draw();
+  drawConfMatrix();
+}
+
+// pureza: para cada cluster, fração do dígito majoritário
+function purity(){
+  if(!clusters.length) return 0;
+  const N=clusters.length;
+  const buckets=Array.from({length:K},()=>new Array(10).fill(0));
+  for(let i=0;i<N;i++) buckets[clusters[i]][labels[i]]++;
+  const correct=buckets.reduce((acc,b)=>acc+Math.max(...b),0);
+  return correct/N;
+}
+
+// ── matriz de confusão cluster × dígito ──────────────────
+const confEl  =document.getElementById("conf");
+const confCtx =confEl.getContext("2d");
+
+function drawConfMatrix(){
+  if(!clusters.length) return;
+  const r=confEl.getBoundingClientRect(),dpr=devicePixelRatio||1;
+  confEl.width=r.width*dpr; confEl.height=r.height*dpr;
+  confCtx.setTransform(dpr,0,0,dpr,0,0);
+  const CW=r.width,CH=r.height;
+
+  const mat=Array.from({length:K},()=>new Array(10).fill(0));
+  for(let i=0;i<clusters.length;i++) mat[clusters[i]][labels[i]]++;
+  const rowMax=mat.map(row=>Math.max(...row));
+
+  const padL=42,padT=8,padB=22,padR=8;
+  const iW=CW-padL-padR,iH=CH-padT-padB;
+  const cw=iW/10,ch=iH/K;
+
+  confCtx.clearRect(0,0,CW,CH);
+
+  for(let k=0;k<K;k++)
+    for(let d=0;d<10;d++){
+      const v=mat[k][d];
+      const alpha=rowMax[k]>0?v/rowMax[k]:0;
+      const x=padL+d*cw,y=padT+k*ch;
+      confCtx.fillStyle=CLUSTER_COLORS[k%10];
+      confCtx.globalAlpha=alpha*0.85+0.03;
+      confCtx.fillRect(x+1,y+1,cw-2,ch-2);
+      if(v>0){
+        confCtx.globalAlpha=1;
+        confCtx.fillStyle=alpha>0.5?"#fff":"#9aa3b5";
+        confCtx.font=`${Math.min(10,ch*0.5)}px system-ui`;
+        confCtx.textAlign="center"; confCtx.textBaseline="middle";
+        confCtx.fillText(v,x+cw/2,y+ch/2);
+      }
+    }
+  confCtx.globalAlpha=1;
+
+  // labels eixo X (dígito)
+  confCtx.fillStyle="#9aa3b5"; confCtx.font="11px system-ui";
+  confCtx.textAlign="center"; confCtx.textBaseline="top";
+  for(let d=0;d<10;d++) confCtx.fillText(d,padL+d*cw+cw/2,padT+iH+4);
+
+  // labels eixo Y (cluster)
+  confCtx.textAlign="right"; confCtx.textBaseline="middle";
+  for(let k=0;k<K;k++) confCtx.fillText(`C${k+1}`,padL-3,padT+k*ch+ch/2);
+}
+
+// ── carrega dados via fetch ───────────────────────────────
+async function loadData() {
+  try {
+    const res=await fetch("../pca/mnist_embeddings.json");
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    DATA=await res.json();
+  } catch(e) {
+    document.getElementById("nodata").classList.add("show");
+    return;
+  }
+
+  labels=DATA.labels;
+  perpKeys=Object.keys(DATA.embeddings.tsne).sort((a,b)=>parseFloat(a)-parseFloat(b));
+  curPerp=perpKeys[Math.floor(perpKeys.length/2)];
+
+  // renderiza botões de perplexidade
+  const perpBtns=document.getElementById("perpBtns");
+  perpKeys.forEach(p=>{
+    const b=document.createElement("button");
+    b.className="opt"+(p===curPerp?" active":""); b.textContent="p="+p;
+    b.onclick=()=>{
+      curPerp=p; clusters=[]; centroids2D=[];
+      [...perpBtns.children].forEach(x=>x.classList.remove("active")); b.classList.add("active");
+      loadEmbedding(); draw();
+    };
+    perpBtns.appendChild(b);
+  });
+
+  // botões K
+  const kBtns=document.getElementById("kBtns");
+  [5,8,10,12,15].forEach(k=>{
+    const b=document.createElement("button");
+    b.className="opt"+(k===K?" active":""); b.textContent=k;
+    b.onclick=()=>{K=k;[...kBtns.children].forEach(x=>x.classList.remove("active"));b.classList.add("active");};
+    kBtns.appendChild(b);
+  });
+
+  // legenda dígitos
+  const dl=document.getElementById("digitLegend");
+  for(let d=0;d<10;d++){
+    const c=document.createElement("div"); c.className="lchip"; c.dataset.d=d;
+    c.innerHTML=`<span class="ldot" style="background:${DIGIT_COLORS[d]}"></span>${d}`;
+    c.onclick=()=>{
+      if(hidden.has(d))hidden.delete(d);else hidden.add(d);
+      c.classList.toggle("off",hidden.has(d)); draw();
+    };
+    dl.appendChild(c);
+  }
+
+  document.getElementById("mN").textContent=labels.length;
+  document.getElementById("btnRun").disabled=false;
+  document.getElementById("btnRun").onclick=applyKMeans;
+
+  loadEmbedding();
+  resize();
+}
+
+function loadEmbedding(){
+  const raw=DATA.embeddings.tsne[curPerp];
+  // raw é array de [x,y] já normalizado para [-1,1]; mapeia para [0,1]
+  pts2D=raw.map(p=>[(p[0]+1)/2,(p[1]+1)/2]);
+  clusters=[]; centroids2D=[];
+  document.getElementById("mInertia").textContent="—";
+  document.getElementById("mIter").textContent="—";
+  document.getElementById("mPurity").textContent="—";
+  draw();
+}
+
+// toggle coloração
+document.getElementById("viewCluster").onclick=()=>{
+  viewMode="cluster";
+  document.getElementById("viewCluster").classList.add("active");
+  document.getElementById("viewLabel").classList.remove("active");
+  draw();
+};
+document.getElementById("viewLabel").onclick=()=>{
+  viewMode="label";
+  document.getElementById("viewLabel").classList.add("active");
+  document.getElementById("viewCluster").classList.remove("active");
+  draw();
+};
+
+window.addEventListener("resize",()=>{
+  resize();
+  if(clusters.length) drawConfMatrix();
+});
+
+loadData();
+</script>
+</body>
+</html>
