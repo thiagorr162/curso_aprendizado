@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compressão SVD</title>
+<style>
+:root{
+  --bg:#0f1117; --panel:#171a23; --panel2:#1f2330; --line:#2a2f3d;
+  --fg:#e8eaf0; --muted:#9aa3b5; --accent:#5b8cff; --accent2:#ff8a5b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg); color:var(--fg);
+  font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;
+  display:flex; flex-direction:column;
+}
+header{padding:14px 20px; border-bottom:1px solid var(--line); flex-shrink:0}
+header h1{margin:0; font-size:18px; font-weight:650}
+header p{margin:4px 0 0; color:var(--muted); font-size:13px}
+
+.wrap{flex:1; display:flex; min-height:0}
+.side{
+  width:280px; flex-shrink:0; padding:16px; border-right:1px solid var(--line);
+  display:flex; flex-direction:column; gap:18px; overflow-y:auto;
+}
+.main{flex:1; display:flex; flex-direction:column; gap:12px; padding:16px; min-width:0}
+
+.group h2{
+  margin:0 0 8px; font-size:12px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); font-weight:600;
+}
+
+/* upload */
+.upload-area{
+  border:2px dashed var(--line); border-radius:10px; padding:22px 16px;
+  text-align:center; cursor:pointer; transition:.15s; color:var(--muted);
+  font-size:13px; user-select:none;
+}
+.upload-area:hover,.upload-area.drag{border-color:var(--accent); color:var(--fg)}
+.upload-area svg{display:block; margin:0 auto 8px}
+input[type=file]{display:none}
+
+/* slider */
+.slider-wrap{display:flex; flex-direction:column; gap:6px}
+.slider-row{display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted)}
+input[type=range]{
+  -webkit-appearance:none; width:100%; height:6px;
+  border-radius:3px; background:var(--panel2); outline:none; cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; width:16px; height:16px;
+  border-radius:50%; background:var(--accent); cursor:pointer;
+}
+input[type=range]:disabled{opacity:.35; cursor:not-allowed}
+
+/* botões genéricos */
+.btns{display:flex; flex-wrap:wrap; gap:6px}
+button.opt{
+  background:var(--panel2); color:var(--fg); border:1px solid var(--line);
+  padding:6px 11px; border-radius:7px; cursor:pointer; font-size:13px; transition:.12s;
+}
+button.opt:hover{border-color:var(--accent)}
+button.opt.active{background:var(--accent); border-color:var(--accent); color:#fff}
+
+/* stats */
+.meta .row{display:flex; justify-content:space-between; padding:2px 0; font-size:13px}
+.meta .row span{color:var(--muted)}
+.meta .row b{color:var(--fg); font-weight:600}
+
+/* canvas area */
+.canvases{display:flex; gap:12px; flex:1; min-height:0; position:relative}
+.imgwrap{flex:1; display:flex; flex-direction:column; gap:5px; min-width:0; min-height:0}
+.imglabel{font-size:12px; color:var(--muted); text-align:center; flex-shrink:0}
+.imgbox{
+  flex:1; display:flex; align-items:center; justify-content:center;
+  background:#0a0c10; border:1px solid var(--line); border-radius:8px;
+  overflow:hidden; min-height:0;
+}
+.imgbox canvas{max-width:100%; max-height:100%; display:block; image-rendering:pixelated}
+.imgbox .placeholder{color:var(--muted); font-size:13px; text-align:center; padding:20px}
+
+/* chart */
+.chart-wrap{flex-shrink:0; height:110px}
+canvas#chart{display:block; width:100%; height:100%; border-radius:8px}
+
+/* loading */
+#loading{
+  display:none; position:absolute; inset:0; z-index:10;
+  background:rgba(15,17,23,.85); border-radius:8px;
+  flex-direction:column; align-items:center; justify-content:center; gap:12px;
+}
+#loading.show{display:flex}
+.spinner{
+  width:36px; height:36px; border:3px solid var(--line);
+  border-top-color:var(--accent); border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loadMsg{font-size:13px; color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Compressão de Imagem por SVD</h1>
+  <p>A = U Σ Vᵀ — mantendo os <i>k</i> maiores valores singulares. Envie qualquer imagem e mova o slider.</p>
+</header>
+
+<div class="wrap">
+  <aside class="side">
+
+    <div class="group">
+      <h2>Imagem</h2>
+      <div class="upload-area" id="uploadArea">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        Clique ou arraste uma imagem<br>
+        <span style="font-size:11px">PNG · JPG · WEBP</span>
+        <input type="file" id="fileInput" accept="image/*">
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Resolução máxima</h2>
+      <div class="btns" id="dimBtns"></div>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:6px">
+        SVD de matrizes maiores demora mais.<br>
+        Imagem atual: <b id="sDimNote">—</b>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Rank k</h2>
+      <div class="slider-wrap">
+        <input type="range" id="kSlider" min="1" max="100" value="10" disabled>
+        <div class="slider-row">
+          <span>k = <b id="kVal">—</b></span>
+          <span id="rankLabel">rank: —</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Estatísticas</h2>
+      <div class="meta">
+        <div class="row"><span>Dimensões</span><b id="sDim">—</b></div>
+        <div class="row"><span>Rank total</span><b id="sRank">—</b></div>
+        <div class="row"><span>Razão compressão</span><b id="sRatio">—</b></div>
+        <div class="row"><span>Erro relativo (‖·‖_F)</span><b id="sErr">—</b></div>
+        <div class="row"><span>PSNR</span><b id="sPSNR">—</b></div>
+      </div>
+    </div>
+
+    <div style="margin-top:auto; font-size:12px; color:var(--muted)">
+      SVD calculado em JS no browser.
+    </div>
+
+  </aside>
+
+  <main class="main">
+    <div class="canvases">
+      <div id="loading"><div class="spinner"></div><div id="loadMsg">Computando…</div></div>
+
+      <div class="imgwrap">
+        <div class="imgbox" id="boxOrig">
+          <div class="placeholder">Carregue uma imagem</div>
+        </div>
+        <div class="imglabel">Original</div>
+      </div>
+
+      <div class="imgwrap">
+        <div class="imgbox" id="boxComp">
+          <div class="placeholder">Aguardando…</div>
+        </div>
+        <div class="imglabel">Comprimida (rank <span id="kLabel2">—</span>)</div>
+      </div>
+    </div>
+
+    <div class="chart-wrap">
+      <canvas id="chart"></canvas>
+    </div>
+  </main>
+</div>
+
+<script>
+"use strict";
+
+// ─────────────────────────────────────────────────────
+// SVD — port do JAMA (Golub-Reinsch bidiagonalization)
+// Entrada: A Float64Array m×n row-major, m >= n
+// Saída: { U (m×nu), s (nu), V (n×n) }
+// A ≈ U * diag(s) * Vᵀ
+// ─────────────────────────────────────────────────────
+function svd(aIn, m, n) {
+  const A  = new Float64Array(aIn);
+  const nu = Math.min(m, n);
+  const s  = new Float64Array(Math.min(m + 1, n));
+  const U  = new Float64Array(m * nu);
+  const V  = new Float64Array(n * n);
+  const e  = new Float64Array(n);
+  const wk = new Float64Array(m);
+  const nct = Math.min(m - 1, n);
+  const nrt = Math.max(0, Math.min(n - 2, m));
+
+  function hyp(a, b) {
+    a = Math.abs(a); b = Math.abs(b);
+    if (a > b) return a * Math.sqrt(1 + (b/a)**2);
+    if (b === 0) return a;
+    return b * Math.sqrt(1 + (a/b)**2);
+  }
+
+  // Bidiagonalização
+  for (let k = 0; k < Math.max(nct, nrt); k++) {
+    if (k < nct) {
+      s[k] = 0;
+      for (let i = k; i < m; i++) s[k] = hyp(s[k], A[i*n+k]);
+      if (s[k] !== 0) {
+        if (A[k*n+k] < 0) s[k] = -s[k];
+        for (let i = k; i < m; i++) A[i*n+k] /= s[k];
+        A[k*n+k] += 1;
+      }
+      s[k] = -s[k];
+    }
+    for (let j = k + 1; j < n; j++) {
+      if (k < nct && s[k] !== 0) {
+        let t = 0;
+        for (let i = k; i < m; i++) t += A[i*n+k] * A[i*n+j];
+        t = -t / A[k*n+k];
+        for (let i = k; i < m; i++) A[i*n+j] += t * A[i*n+k];
+      }
+      e[j] = A[k*n+j];
+    }
+    if (k < nct) for (let i = k; i < m; i++) U[i*nu+k] = A[i*n+k];
+    if (k < nrt) {
+      e[k] = 0;
+      for (let j = k+1; j < n; j++) e[k] = hyp(e[k], e[j]);
+      if (e[k] !== 0) {
+        if (e[k+1] < 0) e[k] = -e[k];
+        for (let j = k+1; j < n; j++) e[j] /= e[k];
+        e[k+1] += 1;
+      }
+      e[k] = -e[k];
+      if (k+1 < m && e[k] !== 0) {
+        for (let i = k+1; i < m; i++) wk[i] = 0;
+        for (let j = k+1; j < n; j++)
+          for (let i = k+1; i < m; i++) wk[i] += e[j] * A[i*n+j];
+        for (let j = k+1; j < n; j++) {
+          const t = -e[j] / e[k+1];
+          for (let i = k+1; i < m; i++) A[i*n+j] += t * wk[i];
+        }
+      }
+      for (let j = k+1; j < n; j++) V[j*n+k] = e[j];
+    }
+  }
+
+  // Finaliza bidiagonal
+  let p = Math.min(n, m+1);
+  if (nct < n) s[nct] = A[nct*n+nct];
+  if (m < p) s[p-1] = 0;
+  if (nrt+1 < p) e[nrt] = A[nrt*n+p-1];
+  e[p-1] = 0;
+
+  // Gera U
+  for (let j = nct; j < nu; j++) {
+    for (let i = 0; i < m; i++) U[i*nu+j] = 0;
+    U[j*nu+j] = 1;
+  }
+  for (let k = nct-1; k >= 0; k--) {
+    if (s[k] !== 0) {
+      for (let j = k+1; j < nu; j++) {
+        let t = 0;
+        for (let i = k; i < m; i++) t += U[i*nu+k] * U[i*nu+j];
+        t = -t / U[k*nu+k];
+        for (let i = k; i < m; i++) U[i*nu+j] += t * U[i*nu+k];
+      }
+      for (let i = k; i < m; i++) U[i*nu+k] = -U[i*nu+k];
+      U[k*nu+k] += 1;
+      for (let i = 0; i < k; i++) U[i*nu+k] = 0;
+    } else {
+      for (let i = 0; i < m; i++) U[i*nu+k] = 0;
+      U[k*nu+k] = 1;
+    }
+  }
+
+  // Gera V
+  for (let k = n-1; k >= 0; k--) {
+    if (k < nrt && e[k] !== 0) {
+      for (let j = k+1; j < n; j++) {
+        let t = 0;
+        for (let i = k+1; i < n; i++) t += V[i*n+k] * V[i*n+j];
+        t = -t / V[(k+1)*n+k];
+        for (let i = k+1; i < n; i++) V[i*n+j] += t * V[i*n+k];
+      }
+    }
+    for (let i = 0; i < n; i++) V[i*n+k] = 0;
+    V[k*n+k] = 1;
+  }
+
+  // Iteração QR
+  const pp  = p - 1;
+  const EPS = Number.EPSILON;
+  let iter  = 0;
+
+  while (p > 0) {
+    let kase, k;
+    for (k = p-2; k >= -1; k--) {
+      if (k < 0) break;
+      if (Math.abs(e[k]) <= EPS*(Math.abs(s[k])+Math.abs(s[k+1]))) { e[k] = 0; break; }
+    }
+    if (k === p-2) kase = 4;
+    else {
+      let ks;
+      for (ks = p-1; ks >= k; ks--) {
+        if (ks === k) break;
+        const t = (ks!==p?Math.abs(e[ks]):0) + (ks!==k+1?Math.abs(e[ks-1]):0);
+        if (Math.abs(s[ks]) <= EPS*t) { s[ks] = 0; break; }
+      }
+      kase = ks===k ? 3 : ks===p-1 ? 1 : (k=ks, 2);
+    }
+    k++;
+
+    let t, cs, sn, f, g;
+    switch (kase) {
+      case 1:
+        f = e[p-2]; e[p-2] = 0;
+        for (let j = p-2; j >= k; j--) {
+          t=hyp(s[j],f); cs=s[j]/t; sn=f/t; s[j]=t;
+          if (j!==k) { f=-sn*e[j-1]; e[j-1]*=cs; }
+          for (let i=0;i<n;i++) { t=cs*V[i*n+j]+sn*V[i*n+p-1]; V[i*n+p-1]=-sn*V[i*n+j]+cs*V[i*n+p-1]; V[i*n+j]=t; }
+        }
+        break;
+      case 2:
+        f = e[k-1]; e[k-1] = 0;
+        for (let j = k; j < p; j++) {
+          t=hyp(s[j],f); cs=s[j]/t; sn=f/t; s[j]=t; f=-sn*e[j]; e[j]*=cs;
+          for (let i=0;i<m;i++) { t=cs*U[i*nu+j]+sn*U[i*nu+k-1]; U[i*nu+k-1]=-sn*U[i*nu+j]+cs*U[i*nu+k-1]; U[i*nu+j]=t; }
+        }
+        break;
+      case 3: {
+        const sc=Math.max(Math.abs(s[p-1]),Math.abs(s[p-2]),Math.abs(e[p-2]),Math.abs(s[k]),Math.abs(e[k]));
+        const sp=s[p-1]/sc,spm1=s[p-2]/sc,epm1=e[p-2]/sc,sk=s[k]/sc,ek=e[k]/sc;
+        const b=((spm1+sp)*(spm1-sp)+epm1*epm1)/2;
+        const c=sp*epm1*sp*epm1;
+        let sh=0;
+        if(b!==0||c!==0){ sh=Math.sqrt(b*b+c); if(b<0)sh=-sh; sh=c/(b+sh); }
+        f=(sk+sp)*(sk-sp)+sh; g=sk*ek;
+        for(let j=k;j<p-1;j++){
+          t=hyp(f,g); cs=f/t; sn=g/t; if(j!==k) e[j-1]=t;
+          f=cs*s[j]+sn*e[j]; e[j]=cs*e[j]-sn*s[j]; g=sn*s[j+1]; s[j+1]*=cs;
+          for(let i=0;i<n;i++){ t=cs*V[i*n+j]+sn*V[i*n+j+1]; V[i*n+j+1]=-sn*V[i*n+j]+cs*V[i*n+j+1]; V[i*n+j]=t; }
+          t=hyp(f,g); cs=f/t; sn=g/t; s[j]=t;
+          f=cs*e[j]+sn*s[j+1]; s[j+1]=-sn*e[j]+cs*s[j+1]; g=sn*e[j+1]; e[j+1]*=cs;
+          for(let i=0;i<m;i++){ t=cs*U[i*nu+j]+sn*U[i*nu+j+1]; U[i*nu+j+1]=-sn*U[i*nu+j]+cs*U[i*nu+j+1]; U[i*nu+j]=t; }
+        }
+        e[p-2]=f; iter++;
+        break;
+      }
+      case 4:
+        if (s[k]<=0){ s[k]=s[k]<0?-s[k]:0; for(let i=0;i<=pp;i++) V[i*n+k]=-V[i*n+k]; }
+        while(k<pp){ if(s[k]>=s[k+1]) break; t=s[k];s[k]=s[k+1];s[k+1]=t;
+          if(k<n-1) for(let i=0;i<n;i++){t=V[i*n+k+1];V[i*n+k+1]=V[i*n+k];V[i*n+k]=t;}
+          if(k<m-1) for(let i=0;i<m;i++){t=U[i*nu+k+1];U[i*nu+k+1]=U[i*nu+k];U[i*nu+k]=t;}
+          k++;
+        }
+        iter=0; p--;
+        break;
+    }
+    if (iter > 600) break;
+  }
+  return { U, s, V, nu };
+}
+
+// ─────────────────────────────────────────────────────
+// Estado global
+// ─────────────────────────────────────────────────────
+let MAX_DIM   = 300;
+let decomps   = null;   // [{U, s, V, nu, norm2, m, n, transposed}] × 3 canais
+let imgW = 0, imgH = 0, rank = 0;
+let origData  = null;   // Uint8ClampedArray original
+let lastBitmap = null;  // ImageBitmap para reprocessar ao mudar resolução
+
+// ─────────────────────────────────────────────────────
+// Elementos DOM
+// ─────────────────────────────────────────────────────
+const kSlider   = document.getElementById("kSlider");
+const kVal      = document.getElementById("kVal");
+const kLabel2   = document.getElementById("kLabel2");
+const rankLabel = document.getElementById("rankLabel");
+const boxOrig   = document.getElementById("boxOrig");
+const boxComp   = document.getElementById("boxComp");
+const loadDiv   = document.getElementById("loading");
+const loadMsg   = document.getElementById("loadMsg");
+const chartEl   = document.getElementById("chart");
+const chartCtx  = chartEl.getContext("2d");
+
+// ─────────────────────────────────────────────────────
+// Upload
+// ─────────────────────────────────────────────────────
+const uploadArea = document.getElementById("uploadArea");
+const fileInput  = document.getElementById("fileInput");
+
+uploadArea.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", e => { if(e.target.files[0]) loadFile(e.target.files[0]); });
+uploadArea.addEventListener("dragover", e => { e.preventDefault(); uploadArea.classList.add("drag"); });
+uploadArea.addEventListener("dragleave", () => uploadArea.classList.remove("drag"));
+uploadArea.addEventListener("drop", e => {
+  e.preventDefault(); uploadArea.classList.remove("drag");
+  if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+function loadFile(file) {
+  createImageBitmap(file).then(bmp => { lastBitmap = bmp; processImage(bmp); });
+}
+
+// ─────────────────────────────────────────────────────
+// Processa imagem → calcula SVD por canal
+// ─────────────────────────────────────────────────────
+function tick() { return new Promise(r => setTimeout(r, 0)); }
+
+function showLoading(msg) { loadMsg.textContent = msg; loadDiv.classList.add("show"); }
+function hideLoading()    { loadDiv.classList.remove("show"); }
+
+async function processImage(src) {
+  showLoading("Redimensionando…");
+  await tick();
+
+  const srcW = src.width, srcH = src.height;
+  const scale = Math.min(MAX_DIM/srcW, MAX_DIM/srcH, 1);
+  imgW = Math.round(srcW * scale);
+  imgH = Math.round(srcH * scale);
+
+  const offsc = new OffscreenCanvas(imgW, imgH);
+  const og    = offsc.getContext("2d");
+  og.drawImage(src, 0, 0, imgW, imgH);
+  origData = og.getImageData(0, 0, imgW, imgH).data;
+
+  // Mostra original
+  const cvO = document.createElement("canvas");
+  cvO.width = imgW; cvO.height = imgH;
+  cvO.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(origData), imgW, imgH), 0, 0);
+  boxOrig.innerHTML = "";
+  boxOrig.appendChild(cvO);
+
+  rank = Math.min(imgW, imgH);
+  decomps = [];
+
+  const labels = ["R","G","B"];
+  for (let ch = 0; ch < 3; ch++) {
+    showLoading(`SVD canal ${labels[ch]} (${ch+1}/3) — aguarde…`);
+    await tick();
+
+    // Garante m >= n para o algoritmo
+    const transposed = imgH < imgW;
+    const m = transposed ? imgW : imgH;
+    const n = transposed ? imgH : imgW;
+
+    const mat = new Float64Array(m * n);
+    for (let r = 0; r < imgH; r++)
+      for (let c = 0; c < imgW; c++) {
+        const v = origData[(r*imgW+c)*4+ch] / 255;
+        if (!transposed) mat[r*n+c] = v;
+        else             mat[c*n+r] = v;
+      }
+
+    const { U, s, V, nu } = svd(mat, m, n);
+    let norm2 = 0;
+    for (let l = 0; l < s.length; l++) norm2 += s[l]*s[l];
+    decomps.push({ U, s, V, nu, norm2, m, n, transposed });
+  }
+
+  // Configura slider
+  kSlider.max   = rank;
+  kSlider.value = Math.min(Math.round(rank * 0.1), 30);
+  kSlider.disabled = false;
+  rankLabel.textContent = `rank: ${rank}`;
+
+  document.getElementById("sDim").textContent     = `${imgW} × ${imgH}`;
+  document.getElementById("sDimNote").textContent = `${imgW} × ${imgH}`;
+  document.getElementById("sRank").textContent    = rank;
+
+  hideLoading();
+  const k = parseInt(kSlider.value);
+  renderCompressed(k);
+  drawChart(k);
+}
+
+// ─────────────────────────────────────────────────────
+// Reconstrói imagem com rank k
+// ─────────────────────────────────────────────────────
+function renderCompressed(k) {
+  if (!decomps) return;
+
+  const out = new Uint8ClampedArray(imgW * imgH * 4);
+  for (let i = 0; i < imgW * imgH; i++) out[i*4+3] = 255;
+
+  for (let ch = 0; ch < 3; ch++) {
+    const { U, s, V, nu, m, n, transposed } = decomps[ch];
+    const kk = Math.min(k, s.length);
+
+    // Reconstrói: A[i,j] = Σ_l s[l] * U[i,l] * V[j,l]
+    // Loop otimizado: percorre l no outer loop para reutilizar U[i,l]
+    const tmp = new Float64Array(m * n);
+    for (let l = 0; l < kk; l++) {
+      const sl = s[l];
+      for (let i = 0; i < m; i++) {
+        const uil = sl * U[i*nu+l];
+        for (let j = 0; j < n; j++) tmp[i*n+j] += uil * V[j*n+l];
+      }
+    }
+
+    // Mapeia de volta para (imgH, imgW)
+    for (let i = 0; i < m; i++)
+      for (let j = 0; j < n; j++) {
+        const row = transposed ? j : i;
+        const col = transposed ? i : j;
+        if (row < imgH && col < imgW) {
+          out[(row*imgW+col)*4+ch] = Math.max(0, Math.min(255, Math.round(tmp[i*n+j]*255)));
+        }
+      }
+  }
+
+  const cvC = document.createElement("canvas");
+  cvC.width = imgW; cvC.height = imgH;
+  cvC.getContext("2d").putImageData(new ImageData(out, imgW, imgH), 0, 0);
+  boxComp.innerHTML = "";
+  boxComp.appendChild(cvC);
+
+  kLabel2.textContent = k;
+  kVal.textContent    = k;
+
+  // Razão de compressão: bits originais / bits armazenados
+  // Armazena k*(m+n+1) números por canal, vs m*n por canal
+  const { m: m0, n: n0 } = decomps[0];
+  const ratio = (m0 * n0) / (k * (m0 + n0 + 1));
+  document.getElementById("sRatio").textContent = ratio.toFixed(2) + "×";
+
+  // Erro relativo via valores singulares (canal cinza médio)
+  const { s: s0, norm2 } = decomps[0];
+  let tail2 = 0;
+  for (let l = k; l < s0.length; l++) tail2 += s0[l]*s0[l];
+  document.getElementById("sErr").textContent = (Math.sqrt(tail2/norm2)*100).toFixed(2) + "%";
+
+  // PSNR
+  let mse = 0;
+  for (let i = 0; i < imgW*imgH; i++)
+    for (let ch = 0; ch < 3; ch++) {
+      const d = (origData[i*4+ch] - out[i*4+ch]) / 255;
+      mse += d*d;
+    }
+  mse /= imgW * imgH * 3;
+  const psnr = mse < 1e-12 ? Infinity : 10*Math.log10(1/mse);
+  document.getElementById("sPSNR").textContent = isFinite(psnr) ? psnr.toFixed(1)+" dB" : "∞ dB";
+}
+
+// ─────────────────────────────────────────────────────
+// Gráfico de valores singulares (log)
+// ─────────────────────────────────────────────────────
+function drawChart(k) {
+  if (!decomps) return;
+  const r   = chartEl.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  chartEl.width  = r.width  * dpr;
+  chartEl.height = r.height * dpr;
+  chartCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = r.width, H = r.height;
+  const pad = {l:38, r:10, t:8, b:22};
+  const iW = W - pad.l - pad.r, iH = H - pad.t - pad.b;
+
+  chartCtx.clearRect(0, 0, W, H);
+
+  const { s } = decomps[0];
+  const N = s.length;
+  const logMax = Math.log(s[0] + 1e-10);
+  const logMin = Math.log(s[N-1] + 1e-10) - 0.3;
+
+  // Grade
+  chartCtx.strokeStyle = "#1e2330"; chartCtx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const y = pad.t + (i/3)*iH;
+    chartCtx.beginPath(); chartCtx.moveTo(pad.l, y); chartCtx.lineTo(pad.l+iW, y); chartCtx.stroke();
+  }
+
+  // Barras
+  const bw = Math.max(1, iW/N - 0.3);
+  for (let l = 0; l < N; l++) {
+    const x  = pad.l + (l/N)*iW;
+    const lv = Math.log(s[l] + 1e-10);
+    const h  = Math.max(1, ((lv-logMin)/(logMax-logMin))*iH);
+    chartCtx.fillStyle = l < k ? "#5b8cff" : "#252b3a";
+    chartCtx.fillRect(x, pad.t+iH-h, bw, h);
+  }
+
+  // Linha k
+  const kx = pad.l + (k/N)*iW;
+  chartCtx.strokeStyle = "#ff8a5b"; chartCtx.lineWidth = 1.5;
+  chartCtx.setLineDash([4,3]);
+  chartCtx.beginPath(); chartCtx.moveTo(kx, pad.t); chartCtx.lineTo(kx, pad.t+iH); chartCtx.stroke();
+  chartCtx.setLineDash([]);
+
+  // Labels
+  chartCtx.fillStyle = "#9aa3b5"; chartCtx.font = "11px system-ui";
+  chartCtx.textAlign = "right"; chartCtx.textBaseline = "middle";
+  chartCtx.fillText(s[0].toFixed(0),   pad.l-3, pad.t+4);
+  chartCtx.fillText(s[N-1].toFixed(2), pad.l-3, pad.t+iH-4);
+  chartCtx.textAlign = "center"; chartCtx.textBaseline = "top";
+  chartCtx.fillText("valores singulares σᵢ (escala log)", pad.l+iW/2, pad.t+iH+5);
+}
+
+window.addEventListener("resize", () => {
+  if (decomps) drawChart(parseInt(kSlider.value));
+});
+
+// ─────────────────────────────────────────────────────
+// Botões de resolução
+// ─────────────────────────────────────────────────────
+const DIM_OPTIONS = [150, 300, 500, 800];
+const dimBtns = document.getElementById("dimBtns");
+DIM_OPTIONS.forEach(d => {
+  const b = document.createElement("button");
+  b.className = "opt" + (d === MAX_DIM ? " active" : "");
+  b.textContent = d + " px";
+  b.onclick = () => {
+    MAX_DIM = d;
+    [...dimBtns.children].forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    if (lastBitmap) processImage(lastBitmap);
+  };
+  dimBtns.appendChild(b);
+});
+
+// ─────────────────────────────────────────────────────
+// Slider
+// ─────────────────────────────────────────────────────
+let rafId = null;
+kSlider.addEventListener("input", () => {
+  const k = parseInt(kSlider.value);
+  kVal.textContent = k;
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(() => { renderCompressed(k); drawChart(k); rafId = null; });
+});
+</script>
+</body>
+</html>
